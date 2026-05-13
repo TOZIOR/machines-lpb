@@ -1,10 +1,11 @@
 require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "change-me";
 
@@ -16,20 +17,33 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json());
 
+function errorResponse(res, error, label = "API ERROR") {
+  console.error(label, error);
+  return res.status(500).json({
+    error: error.message,
+    detail: error.detail || null,
+    hint: error.hint || null,
+    code: error.code || null,
+  });
+}
+
 function requireAdmin(req, res, next) {
   const apiKey = req.header("x-api-key");
-  if (apiKey !== ADMIN_API_KEY) {
-    return res.status(401).json({ error: "Unauthorized" });
+
+  if (!apiKey || apiKey !== ADMIN_API_KEY) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      message: "Clé API absente ou incorrecte.",
+    });
   }
+
   next();
 }
 
 function toSqlDate(value) {
   if (!value) return null;
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return value;
-  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
 
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
     const [dd, mm, yyyy] = value.split("/");
@@ -44,19 +58,54 @@ function toSqlDate(value) {
   return null;
 }
 
+function machineSelectSql() {
+  return `
+    id as "uuid",
+    code as "id",
+    code as "idCode",
+    code,
+    qr_code as "qrCode",
+    qr_code as "qrCodeUrl",
+    marque,
+    modele,
+    numero_serie as "numeroSerie",
+    fournisseur,
+    date_achat as "dateAchat",
+    facture_achat as "factureAchat",
+    prix_achat as "prixAchat",
+    statut,
+    client_id as "clientId",
+    lieu,
+    type_mise_disposition as "typeMiseDisposition",
+    date_mise_disposition as "dateMiseDisposition",
+    commentaire,
+    date_maj as "dateMaj",
+    pennylane_product_id as "pennylaneProductId",
+    pennylane_customer_id as "pennylaneCustomerId",
+    pennylane_purchase_invoice_id as "pennylanePurchaseInvoiceId",
+    pennylane_sales_invoice_id as "pennylaneSalesInvoiceId"
+  `;
+}
+
+async function findMachineByCodeOrUuid(value, db = pool) {
+  const result = await db.query(
+    `select * from machines where code = $1 or id::text = $1 limit 1`,
+    [value]
+  );
+
+  return result.rows[0] || null;
+}
+
 app.get("/api/health", async (_req, res) => {
   try {
     await pool.query("select 1");
-    res.json({ ok: true });
-  } catch (error) {
-    console.error("HEALTH ERROR:", error);
-    res.status(500).json({
-      ok: false,
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
+    res.json({
+      ok: true,
+      database: true,
+      appBaseUrl: APP_BASE_URL,
     });
+  } catch (error) {
+    errorResponse(res, error, "GET /api/health ERROR:");
   }
 });
 
@@ -64,43 +113,14 @@ app.get("/api/machines", requireAdmin, async (_req, res) => {
   try {
     const result = await pool.query(`
       select
-        id as "uuid",
-        code as "id",
-        code as "idCode",
-        code,
-        qr_code as "qrCode",
-        qr_code as "qrCodeUrl",
-        marque,
-        modele,
-        numero_serie as "numeroSerie",
-        fournisseur,
-        date_achat as "dateAchat",
-        facture_achat as "factureAchat",
-        prix_achat as "prixAchat",
-        statut,
-        client_id as "clientId",
-        lieu,
-        type_mise_disposition as "typeMiseDisposition",
-        date_mise_disposition as "dateMiseDisposition",
-        commentaire,
-        date_maj as "dateMaj",
-        pennylane_product_id as "pennylaneProductId",
-        pennylane_customer_id as "pennylaneCustomerId",
-        pennylane_purchase_invoice_id as "pennylanePurchaseInvoiceId",
-        pennylane_sales_invoice_id as "pennylaneSalesInvoiceId"
+        ${machineSelectSql()}
       from machines
       order by created_at desc
     `);
 
     res.json(result.rows);
   } catch (error) {
-    console.error("GET /api/machines ERROR:", error);
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
+    errorResponse(res, error, "GET /api/machines ERROR:");
   }
 });
 
@@ -121,28 +141,17 @@ app.get("/api/clients", requireAdmin, async (_req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error("GET /api/clients ERROR:", error);
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
+    errorResponse(res, error, "GET /api/clients ERROR:");
   }
 });
 
 app.get("/api/machines/:id/movements", requireAdmin, async (req, res) => {
   try {
-    const machineResult = await pool.query(
-      `select id from machines where code = $1 or id::text = $1 limit 1`,
-      [req.params.id]
-    );
+    const machine = await findMachineByCodeOrUuid(req.params.id);
 
-    if (machineResult.rows.length === 0) {
+    if (!machine) {
       return res.json([]);
     }
-
-    const machineUuid = machineResult.rows[0].id;
 
     const result = await pool.query(
       `
@@ -159,18 +168,70 @@ app.get("/api/machines/:id/movements", requireAdmin, async (req, res) => {
       where machine_id = $1
       order by date desc
       `,
-      [machineUuid]
+      [machine.id]
     );
 
     res.json(result.rows);
   } catch (error) {
-    console.error("GET /api/machines/:id/movements ERROR:", error);
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
+    errorResponse(res, error, "GET /api/machines/:id/movements ERROR:");
+  }
+});
+
+app.get("/api/public/machines/:code", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      select
+        ${machineSelectSql()}
+      from machines
+      where code = $1
+      limit 1
+      `,
+      [req.params.code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: "Machine not found",
+        message: "Aucune machine trouvée pour ce QR code.",
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    errorResponse(res, error, "GET /api/public/machines/:code ERROR:");
+  }
+});
+
+app.get("/api/public/machines/:code/movements", async (req, res) => {
+  try {
+    const machine = await findMachineByCodeOrUuid(req.params.code);
+
+    if (!machine) {
+      return res.json([]);
+    }
+
+    const result = await pool.query(
+      `
+      select
+        id,
+        machine_id as "machineId",
+        date,
+        action,
+        ancien_statut as "ancienStatut",
+        nouveau_statut as "nouveauStatut",
+        client_id as "clientId",
+        commentaire
+      from machine_movements
+      where machine_id = $1
+      order by date desc
+      `,
+      [machine.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    errorResponse(res, error, "GET /api/public/machines/:code/movements ERROR:");
   }
 });
 
@@ -191,7 +252,10 @@ app.get("/api/pennylane/invoices", requireAdmin, (_req, res) => {
 });
 
 app.post("/api/pennylane/connect", requireAdmin, (_req, res) => {
-  res.json({ connected: true, lastSyncAt: new Date().toLocaleString("fr-FR") });
+  res.json({
+    connected: true,
+    lastSyncAt: new Date().toLocaleString("fr-FR"),
+  });
 });
 
 app.post("/api/pennylane/disconnect", requireAdmin, (_req, res) => {
@@ -199,15 +263,21 @@ app.post("/api/pennylane/disconnect", requireAdmin, (_req, res) => {
 });
 
 app.post("/api/pennylane/sync/customers", requireAdmin, (_req, res) => {
-  res.json({ ok: true, lastSyncAt: new Date().toLocaleString("fr-FR") });
+  res.json({
+    ok: true,
+    lastSyncAt: new Date().toLocaleString("fr-FR"),
+  });
 });
 
 app.post("/api/clients", requireAdmin, async (req, res) => {
   try {
     const { nom, adresse, telephone, email, commentaire } = req.body || {};
 
-    if (!nom) {
-      return res.status(400).json({ error: "nom is required" });
+    if (!nom || !nom.trim()) {
+      return res.status(400).json({
+        error: "nom is required",
+        message: "Le nom du client est obligatoire.",
+      });
     }
 
     const result = await pool.query(
@@ -223,18 +293,18 @@ app.post("/api/clients", requireAdmin, async (req, res) => {
         commentaire,
         pennylane_customer_id as "pennylaneCustomerId"
       `,
-      [nom, adresse || null, telephone || null, email || null, commentaire || null]
+      [
+        nom.trim(),
+        adresse || null,
+        telephone || null,
+        email || null,
+        commentaire || null,
+      ]
     );
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error("POST /api/clients ERROR:", error);
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
+    errorResponse(res, error, "POST /api/clients ERROR:");
   }
 });
 
@@ -243,11 +313,6 @@ app.post("/api/machines", requireAdmin, async (req, res) => {
 
   try {
     await client.query("begin");
-
-    const countResult = await client.query(`select count(*)::int as count from machines`);
-    const nextCount = countResult.rows[0].count + 1;
-    const code = `MC-2026-${String(nextCount).padStart(3, "0")}`;
-    const qrCode = `${APP_BASE_URL}/machine/${code}`;
 
     const {
       marque,
@@ -268,9 +333,35 @@ app.post("/api/machines", requireAdmin, async (req, res) => {
       await client.query("rollback");
       return res.status(400).json({
         error: "marque, modele and numeroSerie are required",
+        message: "La marque, le modèle et le numéro de série sont obligatoires.",
       });
     }
 
+    const year = new Date().getFullYear();
+
+    const lastCodeResult = await client.query(
+      `
+      select code
+      from machines
+      where code like $1
+      order by code desc
+      limit 1
+      `,
+      [`MC-${year}-%`]
+    );
+
+    let nextNumber = 1;
+
+    if (lastCodeResult.rows.length > 0) {
+      const lastCode = lastCodeResult.rows[0].code;
+      const lastNumber = Number(lastCode.split("-").pop());
+      if (!Number.isNaN(lastNumber)) {
+        nextNumber = lastNumber + 1;
+      }
+    }
+
+    const code = `MC-${year}-${String(nextNumber).padStart(3, "0")}`;
+    const qrCode = `${APP_BASE_URL}/machine/${code}`;
     const sqlDateAchat = toSqlDate(dateAchat);
 
     const result = await client.query(
@@ -312,37 +403,14 @@ app.post("/api/machines", requireAdmin, async (req, res) => {
         $14
       )
       returning
-        id as "uuid",
-        code as "idCode",
-        code as "id",
-        code,
-        qr_code as "qrCode",
-        qr_code as "qrCodeUrl",
-        marque,
-        modele,
-        numero_serie as "numeroSerie",
-        fournisseur,
-        date_achat as "dateAchat",
-        facture_achat as "factureAchat",
-        prix_achat as "prixAchat",
-        statut,
-        client_id as "clientId",
-        lieu,
-        type_mise_disposition as "typeMiseDisposition",
-        date_mise_disposition as "dateMiseDisposition",
-        commentaire,
-        date_maj as "dateMaj",
-        pennylane_product_id as "pennylaneProductId",
-        pennylane_customer_id as "pennylaneCustomerId",
-        pennylane_purchase_invoice_id as "pennylanePurchaseInvoiceId",
-        pennylane_sales_invoice_id as "pennylaneSalesInvoiceId"
+        ${machineSelectSql()}
       `,
       [
         code,
         qrCode,
-        marque,
-        modele,
-        numeroSerie,
+        marque.trim(),
+        modele.trim(),
+        numeroSerie.trim(),
         fournisseur || null,
         sqlDateAchat,
         factureAchat || null,
@@ -381,13 +449,7 @@ app.post("/api/machines", requireAdmin, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     await client.query("rollback");
-    console.error("POST /api/machines ERROR:", error);
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
+    errorResponse(res, error, "POST /api/machines ERROR:");
   } finally {
     client.release();
   }
@@ -399,22 +461,16 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
   try {
     await client.query("begin");
 
-    const currentResult = await client.query(
-      `
-      select *
-      from machines
-      where code = $1 or id::text = $1
-      limit 1
-      `,
-      [req.params.id]
-    );
+    const current = await findMachineByCodeOrUuid(req.params.id, client);
 
-    if (currentResult.rows.length === 0) {
+    if (!current) {
       await client.query("rollback");
-      return res.status(404).json({ error: "Machine not found" });
+      return res.status(404).json({
+        error: "Machine not found",
+        message: "Machine introuvable.",
+      });
     }
 
-    const current = currentResult.rows[0];
     const body = req.body || {};
 
     const nextStatut = body.statut ?? current.statut;
@@ -435,37 +491,14 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
         commentaire = $5,
         date_maj = current_date,
         date_mise_disposition = case
-  when $1 in ('En prêt', 'En location', 'Vendue') then current_date
-  when $1 in ('En stock', 'Maintenance') then null
-  else date_mise_disposition
-end,
+          when $1 in ('En prêt', 'En location', 'Vendue') then current_date
+          when $1 in ('En stock', 'En maintenance') then null
+          else date_mise_disposition
+        end,
         pennylane_customer_id = $6
       where id = $7
       returning
-        id as "uuid",
-        code as "idCode",
-        code as "id",
-        code,
-        qr_code as "qrCode",
-        qr_code as "qrCodeUrl",
-        marque,
-        modele,
-        numero_serie as "numeroSerie",
-        fournisseur,
-        date_achat as "dateAchat",
-        facture_achat as "factureAchat",
-        prix_achat as "prixAchat",
-        statut,
-        client_id as "clientId",
-        lieu,
-        type_mise_disposition as "typeMiseDisposition",
-        date_mise_disposition as "dateMiseDisposition",
-        commentaire,
-        date_maj as "dateMaj",
-        pennylane_product_id as "pennylaneProductId",
-        pennylane_customer_id as "pennylaneCustomerId",
-        pennylane_purchase_invoice_id as "pennylanePurchaseInvoiceId",
-        pennylane_sales_invoice_id as "pennylaneSalesInvoiceId"
+        ${machineSelectSql()}
       `,
       [
         nextStatut,
@@ -504,13 +537,7 @@ end,
     res.json(updatedResult.rows[0]);
   } catch (error) {
     await client.query("rollback");
-    console.error("PATCH /api/machines/:id ERROR:", error);
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
+    errorResponse(res, error, "PATCH /api/machines/:id ERROR:");
   } finally {
     client.release();
   }
