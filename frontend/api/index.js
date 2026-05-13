@@ -8,6 +8,7 @@ const app = express();
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "change-me";
+const PENNYLANE_API_KEY = process.env.PENNYLANE_API_KEY || "";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -239,10 +240,55 @@ app.get("/api/pennylane/status", requireAdmin, (_req, res) => {
   res.json({ connected: false, lastSyncAt: "" });
 });
 
-app.get("/api/pennylane/customers", requireAdmin, (_req, res) => {
-  res.json([]);
-});
+app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {
+  try {
+    if (!PENNYLANE_API_KEY) {
+      return res.status(500).json({
+        error: "PENNYLANE_API_KEY manquante",
+      });
+    }
 
+    const response = await fetch(
+      "https://app.pennylane.com/api/external/v2/customers",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${PENNYLANE_API_KEY}`,
+          Accept: "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const text = await response.text();
+
+      return res.status(response.status).json({
+        error: "Erreur API Pennylane",
+        detail: text,
+      });
+    }
+
+    const data = await response.json();
+
+    const customers = (data.customers || []).map((customer) => ({
+      id: customer.id,
+      name: customer.name,
+      label: customer.name,
+      email: customer.email,
+    }));
+
+    res.json(customers);
+  } catch (error) {
+    console.error("GET /api/pennylane/customers ERROR:", error);
+
+    res.status(500).json({
+      error: error.message,
+      detail: error.detail || null,
+      hint: error.hint || null,
+      code: error.code || null,
+    });
+  }
+});
 app.get("/api/pennylane/products", requireAdmin, (_req, res) => {
   res.json([]);
 });
