@@ -12,7 +12,7 @@ export function Button({ className, variant = "default", ...props }) {
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+        ""inline-flex items-center justify-center cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 ...",
         variants[variant] || variants.default,
         className
       )}
