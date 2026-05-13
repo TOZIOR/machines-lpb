@@ -527,275 +527,340 @@ export default function App() {
     );
   }
 
-  if (routeInfo.isMachineRoute) {
-    return (
-      <MachinePublicPage
-        machine={selectedMachine}
-        client={selectedClient}
-        pennylaneCustomer={selectedPennylaneCustomer}
-        pennylaneProduct={selectedPennylaneProduct}
-        purchaseInvoice={selectedPurchaseInvoice}
-        salesInvoice={selectedSalesInvoice}
-        history={machineHistory}
-        clients={clients}
-        onRefreshMachine={refreshMachine}
-      />
-    );
-  }
-
+if (routeInfo.isMachineRoute) {
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        {errorMessage ? (
-          <Card className="rounded-2xl border-red-200 bg-red-50 shadow-sm">
-            <CardContent className="p-4 text-sm text-red-700">{errorMessage}</CardContent>
-          </Card>
-        ) : null}
+    <MachinePublicPage
+      machine={selectedMachine}
+      client={selectedClient}
+      pennylaneCustomer={selectedPennylaneCustomer}
+      pennylaneProduct={selectedPennylaneProduct}
+      purchaseInvoice={selectedPurchaseInvoice}
+      salesInvoice={selectedSalesInvoice}
+      history={machineHistory}
+      clients={clients}
+      onRefreshMachine={refreshMachine}
+    />
+  );
+}
 
-        <Card className="rounded-2xl border-dashed shadow-sm">
-          <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-3">
-              <div className={`rounded-2xl p-3 ${pennylaneStatus.connected ? "bg-emerald-100" : "bg-slate-100"}`}>
-                {pennylaneStatus.connected ? (
-                  <ShieldCheck className="h-5 w-5 text-emerald-700" />
-                ) : (
-                  <PlugZap className="h-5 w-5 text-slate-700" />
-                )}
-              </div>
+return (
+  <div className="min-h-screen bg-[#f4eadc] text-[#2d1b12]">      <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
+        <aside className="hidden border-r border-[#d8c4ad] bg-[#eadcc9] p-4 lg:block">
+          <div className="mb-8 flex items-center gap-3 rounded-3xl bg-[#fffaf3] p-4 shadow-sm">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#5b351f] text-2xl text-white">
+              ⚙️
+            </div>
+            <div>
+              <div className="text-lg font-bold text-[#2d1b12]">LPB</div>
+              <div className="text-sm text-[#7a5f4b]">Parc machines</div>
+            </div>
+          </div>
+
+          <nav className="space-y-3">
+            <SideNav active icon="🏠" label="Accueil" />
+            <SideNav icon="📦" label="Machines" />
+            <SideNav icon="👤" label="Clients" />
+            <SideNav icon="🔧" label="Maintenance" />
+            <SideNav icon="🔗" label="Pennylane" />
+            <SideNav icon="🧾" label="Historique" />
+          </nav>
+        </aside>
+
+        <main className="min-w-0">
+          <header className="bg-[#5b351f] px-5 py-6 text-white md:px-8">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                  Connexion Pennylane
-                  {pennylaneStatus.connected ? (
-                    <Wifi className="h-4 w-4 text-emerald-600" />
-                  ) : (
-                    <WifiOff className="h-4 w-4 text-slate-400" />
-                  )}
-                </div>
-                <p className="text-sm text-slate-500">
-                  {pennylaneStatus.connected
-                    ? `Connecté. Dernière synchronisation : ${pennylaneStatus.lastSyncAt || "jamais"}`
-                    : "Non connecté. Clique pour simuler le branchement OAuth."}
+                <h1 className="text-3xl font-extrabold tracking-tight">LPB Machines</h1>
+                <p className="mt-1 text-sm text-[#eadcc9]">
+                  Gestion du parc machines · Supabase · Pennylane
                 </p>
               </div>
+
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="flex h-12 min-w-[320px] items-center gap-3 rounded-2xl bg-white px-4 text-[#2d1b12] shadow-sm">
+                  <Search className="h-5 w-5 text-[#7a5f4b]" />
+                  <input
+                    className="w-full bg-transparent text-sm outline-none placeholder:text-[#9a8571]"
+                    placeholder="Rechercher..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+
+                <div className="rounded-2xl bg-white px-5 py-3 text-sm text-[#5b351f] shadow-sm">
+                  <div className="text-xs text-[#7a5f4b]">Connexion</div>
+                  <div className="font-bold">
+                    {pennylaneStatus.connected ? "Pennylane connecté" : "Pennylane non connecté"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <div className="space-y-6 p-5 md:p-8">
+            {errorMessage ? (
+              <Card className="rounded-3xl border-red-200 bg-red-50 shadow-sm">
+                <CardContent className="p-4 text-sm text-red-700">{errorMessage}</CardContent>
+              </Card>
+            ) : null}
+
+            <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
+              <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className={`rounded-2xl p-3 ${pennylaneStatus.connected ? "bg-emerald-100" : "bg-[#f0dfcd]"}`}>
+                    {pennylaneStatus.connected ? (
+                      <ShieldCheck className="h-5 w-5 text-emerald-700" />
+                    ) : (
+                      <PlugZap className="h-5 w-5 text-[#5b351f]" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 text-lg font-bold text-[#2d1b12]">
+                      Connexion Pennylane
+                      {pennylaneStatus.connected ? (
+                        <Wifi className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <WifiOff className="h-4 w-4 text-[#9a8571]" />
+                      )}
+                    </div>
+                    <p className="text-sm text-[#7a5f4b]">
+                      {pennylaneStatus.connected
+                        ? `Connecté. Dernière synchronisation : ${pennylaneStatus.lastSyncAt || "jamais"}`
+                        : "Non connecté. Clique pour simuler le branchement OAuth."}
+                    </p>
+                  </div>
+                </div>
+
+                {!pennylaneStatus.connected ? (
+                  <Button className="rounded-2xl bg-[#5b351f] px-5 text-white hover:bg-[#3f2415]" onClick={connectPennylane}>
+                    <PlugZap className="mr-2 h-4 w-4" />
+                    Connecter Pennylane
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="rounded-2xl border-[#5b351f] bg-[#fffdf8] px-5 text-[#5b351f] hover:bg-[#f0dfcd]"
+                    onClick={syncPennylaneData}
+                    disabled={isSyncing}
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+                    Synchroniser
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-4 md:grid-cols-4">
+              <StatCard title="Machines" value={stats.total} icon={Package} />
+              <StatCard title="En stock" value={stats.stock} icon={Building2} />
+              <StatCard title="Chez clients" value={stats.enClient} icon={UserRound} />
+              <StatCard title="Maintenance" value={stats.maintenance} icon={Wrench} />
             </div>
 
-            {!pennylaneStatus.connected ? (
-              <Button className="rounded-xl" onClick={connectPennylane}>
-                <PlugZap className="mr-2 h-4 w-4" />
-                Connecter Pennylane
-              </Button>
-            ) : (
-              <Button variant="outline" className="rounded-xl" onClick={syncPennylaneData} disabled={isSyncing}>
-                <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
-                Synchroniser
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-4 md:grid-cols-4">
-          <StatCard title="Machines" value={stats.total} icon={Package} />
-          <StatCard title="En stock" value={stats.stock} icon={Building2} />
-          <StatCard title="Chez clients" value={stats.enClient} icon={UserRound} />
-          <StatCard title="Maintenance" value={stats.maintenance} icon={Wrench} />
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[1.05fr_1.95fr]">
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="text-xl">Parc machines</CardTitle>
-                  <p className="text-sm text-slate-500">Gestion locale connectée à Supabase.</p>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button variant="outline" className="rounded-xl" onClick={() => setShowClientForm((v) => !v)}>
-                    Nouveau client
-                  </Button>
-                  <Button className="rounded-xl" onClick={() => setShowMachineForm((v) => !v)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Ajouter
-                  </Button>
-                </div>
-              </div>
-
-              {showClientForm ? (
-                <Card className="rounded-2xl bg-slate-50 shadow-none">
-                  <CardContent className="grid gap-4 p-5 md:grid-cols-2">
-                    <Field label="Nom">
-                      <Input value={clientForm.nom} onChange={(e) => setClientForm({ ...clientForm, nom: e.target.value })} />
-                    </Field>
-                    <Field label="Téléphone">
-                      <Input value={clientForm.telephone} onChange={(e) => setClientForm({ ...clientForm, telephone: e.target.value })} />
-                    </Field>
-                    <Field label="Email">
-                      <Input value={clientForm.email} onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })} />
-                    </Field>
-                    <Field label="Adresse">
-                      <Input value={clientForm.adresse} onChange={(e) => setClientForm({ ...clientForm, adresse: e.target.value })} />
-                    </Field>
-                    <Field label="Commentaire" className="md:col-span-2">
-                      <Textarea value={clientForm.commentaire} onChange={(e) => setClientForm({ ...clientForm, commentaire: e.target.value })} />
-                    </Field>
-                    <div className="md:col-span-2">
-                      <Button onClick={createClient} className="rounded-xl">Créer le client</Button>
+            <div className="grid gap-6 xl:grid-cols-[1.05fr_1.95fr]">
+              <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
+                <CardHeader className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-xl text-[#2d1b12]">Parc machines</CardTitle>
+                      <p className="text-sm text-[#7a5f4b]">Gestion locale connectée à Supabase.</p>
                     </div>
-                  </CardContent>
-                </Card>
-              ) : null}
 
-              {showMachineForm ? (
-                <Card className="rounded-2xl bg-slate-50 shadow-none">
-                  <CardContent className="grid gap-4 p-5 md:grid-cols-2">
-                    <Field label="Marque">
-                      <Input value={machineForm.marque} onChange={(e) => setMachineForm({ ...machineForm, marque: e.target.value })} />
-                    </Field>
-                    <Field label="Modèle">
-                      <Input value={machineForm.modele} onChange={(e) => setMachineForm({ ...machineForm, modele: e.target.value })} />
-                    </Field>
-                    <Field label="N° série">
-                      <Input value={machineForm.numeroSerie} onChange={(e) => setMachineForm({ ...machineForm, numeroSerie: e.target.value })} />
-                    </Field>
-                    <Field label="Fournisseur">
-                      <Input value={machineForm.fournisseur} onChange={(e) => setMachineForm({ ...machineForm, fournisseur: e.target.value })} />
-                    </Field>
-                    <Field label="Date achat">
-                      <Input type="date" value={machineForm.dateAchat} onChange={(e) => setMachineForm({ ...machineForm, dateAchat: e.target.value })} />
-                    </Field>
-                    <Field label="Prix achat">
-                      <Input type="number" value={machineForm.prixAchat} onChange={(e) => setMachineForm({ ...machineForm, prixAchat: e.target.value })} />
-                    </Field>
-                    <Field label="Facture achat">
-                      <Input value={machineForm.factureAchat} onChange={(e) => setMachineForm({ ...machineForm, factureAchat: e.target.value })} />
-                    </Field>
-                    <Field label="Lieu">
-                      <Input value={machineForm.lieu} onChange={(e) => setMachineForm({ ...machineForm, lieu: e.target.value })} />
-                    </Field>
-
-                    <Field label="Produit Pennylane">
-                      <Select value={machineFormPennylaneProductId} onChange={setMachineFormPennylaneProductId}>
-                        <option value="">Aucun</option>
-                        {pennylaneProducts.map((p) => (
-                          <option key={p.id} value={p.id}>{p.label || p.name || p.id}</option>
-                        ))}
-                      </Select>
-                    </Field>
-
-                    <Field label="Facture achat Pennylane">
-                      <Select value={machineFormPennylanePurchaseInvoiceId} onChange={setMachineFormPennylanePurchaseInvoiceId}>
-                        <option value="">Aucune</option>
-                        {pennylaneInvoices.map((invoice) => (
-                          <option key={invoice.id} value={invoice.id}>{invoice.number || invoice.label || invoice.id}</option>
-                        ))}
-                      </Select>
-                    </Field>
-
-                    <Field label="Facture vente Pennylane">
-                      <Select value={machineFormPennylaneSalesInvoiceId} onChange={setMachineFormPennylaneSalesInvoiceId}>
-                        <option value="">Aucune</option>
-                        {pennylaneInvoices.map((invoice) => (
-                          <option key={invoice.id} value={invoice.id}>{invoice.number || invoice.label || invoice.id}</option>
-                        ))}
-                      </Select>
-                    </Field>
-
-                    <Field label="Commentaire" className="md:col-span-2">
-                      <Textarea value={machineForm.commentaire} onChange={(e) => setMachineForm({ ...machineForm, commentaire: e.target.value })} />
-                    </Field>
-
-                    <div className="md:col-span-2">
-                      <Button onClick={createMachine} className="rounded-xl">Créer la machine</Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              <div className="flex items-center gap-2">
-                <Search className="h-4 w-4 text-slate-400" />
-                <Input placeholder="Rechercher machine, client, série..." value={search} onChange={(e) => setSearch(e.target.value)} />
-              </div>
-
-              <div className="grid gap-2 md:grid-cols-2">
-                <Select value={statusFilter} onChange={setStatusFilter}>
-                  <option value="Tous">Tous les statuts</option>
-                  {STATUSES.map((status) => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </Select>
-
-                <Select value={clientFilter} onChange={setClientFilter}>
-                  <option value="Tous">Tous les clients</option>
-                  <option value="Sans client">Sans client</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>{client.nom}</option>
-                  ))}
-                </Select>
-              </div>
-            </CardHeader>
-
-            <CardContent>
-              <ScrollArea className="h-[620px] pr-3">
-                <div className="space-y-3">
-                  {filteredMachines.map((machine) => {
-                    const client = clients.find((c) => c.id === machine.clientId);
-                    const selected = getMachineApiId(machine) === getMachineApiId(selectedMachine);
-
-                    return (
-                      <button
-                        key={getMachineApiId(machine)}
-                        onClick={async () => {
-                          const apiId = getMachineApiId(machine);
-                          setSelectedMachineId(apiId);
-                          setMovements(await apiFetch(`/machines/${apiId}/movements`));
-                        }}
-                        className={`w-full rounded-2xl border bg-white p-4 text-left transition hover:border-slate-400 ${
-                          selected ? "border-slate-900 shadow-sm" : "border-slate-200"
-                        }`}
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="rounded-2xl border-[#d8c4ad] bg-[#fffdf8] text-[#5b351f] hover:bg-[#f0dfcd]"
+                        onClick={() => setShowClientForm((v) => !v)}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="font-semibold text-slate-900">{getMachineCode(machine)}</div>
-                            <div className="text-sm text-slate-600">{machine.marque} {machine.modele}</div>
-                            <div className="mt-1 text-xs text-slate-500">{client?.nom || "Sans client"}</div>
-                          </div>
-                          <Badge variant={statusVariant(machine.statut)}>{machine.statut}</Badge>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
+                        Nouveau client
+                      </Button>
+                      <Button
+                        className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
+                        onClick={() => setShowMachineForm((v) => !v)}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Ajouter
+                      </Button>
+                    </div>
+                  </div>
 
-          <MachineDetailPanel
-            machine={selectedMachine}
-            client={selectedClient}
-            pennylaneCustomer={selectedPennylaneCustomer}
-            pennylaneProduct={selectedPennylaneProduct}
-            purchaseInvoice={selectedPurchaseInvoice}
-            salesInvoice={selectedSalesInvoice}
-            history={machineHistory}
-            clients={clients}
-            pennylaneCustomers={pennylaneCustomers}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            actionStatus={actionStatus}
-            setActionStatus={setActionStatus}
-            actionClientId={actionClientId}
-            setActionClientId={setActionClientId}
-            actionLocation={actionLocation}
-            setActionLocation={setActionLocation}
-            actionType={actionType}
-            setActionType={setActionType}
-            actionComment={actionComment}
-            setActionComment={setActionComment}
-            actionPennylaneCustomerId={actionPennylaneCustomerId}
-            setActionPennylaneCustomerId={setActionPennylaneCustomerId}
-            onApplyAction={applyAction}
-          />
-        </div>
+                  {showClientForm ? (
+                    <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffdf8] shadow-none">
+                      <CardContent className="grid gap-4 p-5 md:grid-cols-2">
+                        <Field label="Nom">
+                          <Input value={clientForm.nom} onChange={(e) => setClientForm({ ...clientForm, nom: e.target.value })} />
+                        </Field>
+                        <Field label="Téléphone">
+                          <Input value={clientForm.telephone} onChange={(e) => setClientForm({ ...clientForm, telephone: e.target.value })} />
+                        </Field>
+                        <Field label="Email">
+                          <Input value={clientForm.email} onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })} />
+                        </Field>
+                        <Field label="Adresse">
+                          <Input value={clientForm.adresse} onChange={(e) => setClientForm({ ...clientForm, adresse: e.target.value })} />
+                        </Field>
+                        <Field label="Commentaire" className="md:col-span-2">
+                          <Textarea value={clientForm.commentaire} onChange={(e) => setClientForm({ ...clientForm, commentaire: e.target.value })} />
+                        </Field>
+                        <div className="md:col-span-2">
+                          <Button onClick={createClient} className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]">
+                            Créer le client
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  {showMachineForm ? (
+                    <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffdf8] shadow-none">
+                      <CardContent className="grid gap-4 p-5 md:grid-cols-2">
+                        <Field label="Marque">
+                          <Input value={machineForm.marque} onChange={(e) => setMachineForm({ ...machineForm, marque: e.target.value })} />
+                        </Field>
+                        <Field label="Modèle">
+                          <Input value={machineForm.modele} onChange={(e) => setMachineForm({ ...machineForm, modele: e.target.value })} />
+                        </Field>
+                        <Field label="N° série">
+                          <Input value={machineForm.numeroSerie} onChange={(e) => setMachineForm({ ...machineForm, numeroSerie: e.target.value })} />
+                        </Field>
+                        <Field label="Fournisseur">
+                          <Input value={machineForm.fournisseur} onChange={(e) => setMachineForm({ ...machineForm, fournisseur: e.target.value })} />
+                        </Field>
+                        <Field label="Date achat">
+                          <Input type="date" value={machineForm.dateAchat} onChange={(e) => setMachineForm({ ...machineForm, dateAchat: e.target.value })} />
+                        </Field>
+                        <Field label="Prix achat">
+                          <Input type="number" value={machineForm.prixAchat} onChange={(e) => setMachineForm({ ...machineForm, prixAchat: e.target.value })} />
+                        </Field>
+                        <Field label="Facture achat">
+                          <Input value={machineForm.factureAchat} onChange={(e) => setMachineForm({ ...machineForm, factureAchat: e.target.value })} />
+                        </Field>
+                        <Field label="Lieu">
+                          <Input value={machineForm.lieu} onChange={(e) => setMachineForm({ ...machineForm, lieu: e.target.value })} />
+                        </Field>
+
+                        <Field label="Produit Pennylane">
+                          <Select value={machineFormPennylaneProductId} onChange={setMachineFormPennylaneProductId}>
+                            <option value="">Aucun</option>
+                            {pennylaneProducts.map((p) => (
+                              <option key={p.id} value={p.id}>{p.label || p.name || p.id}</option>
+                            ))}
+                          </Select>
+                        </Field>
+
+                        <Field label="Facture achat Pennylane">
+                          <Select value={machineFormPennylanePurchaseInvoiceId} onChange={setMachineFormPennylanePurchaseInvoiceId}>
+                            <option value="">Aucune</option>
+                            {pennylaneInvoices.map((invoice) => (
+                              <option key={invoice.id} value={invoice.id}>{invoice.number || invoice.label || invoice.id}</option>
+                            ))}
+                          </Select>
+                        </Field>
+
+                        <Field label="Facture vente Pennylane">
+                          <Select value={machineFormPennylaneSalesInvoiceId} onChange={setMachineFormPennylaneSalesInvoiceId}>
+                            <option value="">Aucune</option>
+                            {pennylaneInvoices.map((invoice) => (
+                              <option key={invoice.id} value={invoice.id}>{invoice.number || invoice.label || invoice.id}</option>
+                            ))}
+                          </Select>
+                        </Field>
+
+                        <Field label="Commentaire" className="md:col-span-2">
+                          <Textarea value={machineForm.commentaire} onChange={(e) => setMachineForm({ ...machineForm, commentaire: e.target.value })} />
+                        </Field>
+
+                        <div className="md:col-span-2">
+                          <Button onClick={createMachine} className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]">
+                            Créer la machine
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <Select value={statusFilter} onChange={setStatusFilter}>
+                      <option value="Tous">Tous les statuts</option>
+                      {STATUSES.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </Select>
+
+                    <Select value={clientFilter} onChange={setClientFilter}>
+                      <option value="Tous">Tous les clients</option>
+                      <option value="Sans client">Sans client</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id}>{client.nom}</option>
+                      ))}
+                    </Select>
+                  </div>
+                </CardHeader>
+
+                <CardContent>
+                  <ScrollArea className="h-[620px] pr-3">
+                    <div className="space-y-3">
+                      {filteredMachines.map((machine) => {
+                        const client = clients.find((c) => c.id === machine.clientId);
+                        const selected = getMachineApiId(machine) === getMachineApiId(selectedMachine);
+
+                        return (
+                          <button
+                            key={getMachineApiId(machine)}
+                            onClick={async () => {
+                              const apiId = getMachineApiId(machine);
+                              setSelectedMachineId(apiId);
+                              setMovements(await apiFetch(`/machines/${apiId}/movements`));
+                            }}
+                            className={`w-full rounded-3xl border bg-[#fffdf8] p-4 text-left shadow-sm transition hover:border-[#5b351f] hover:bg-[#f7eddf] ${
+                              selected ? "border-[#5b351f] ring-2 ring-[#eadcc9]" : "border-[#e4d4c2]"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-bold text-[#2d1b12]">{getMachineCode(machine)}</div>
+                                <div className="text-sm text-[#7a5f4b]">{machine.marque} {machine.modele}</div>
+                                <div className="mt-1 text-xs text-[#9a8571]">{client?.nom || "Sans client"}</div>
+                              </div>
+                              <Badge variant={statusVariant(machine.statut)}>{machine.statut}</Badge>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              <MachineDetailPanel
+                machine={selectedMachine}
+                client={selectedClient}
+                pennylaneCustomer={selectedPennylaneCustomer}
+                pennylaneProduct={selectedPennylaneProduct}
+                purchaseInvoice={selectedPurchaseInvoice}
+                salesInvoice={selectedSalesInvoice}
+                history={machineHistory}
+                clients={clients}
+                pennylaneCustomers={pennylaneCustomers}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                actionStatus={actionStatus}
+                setActionStatus={setActionStatus}
+                actionClientId={actionClientId}
+                setActionClientId={setActionClientId}
+                actionLocation={actionLocation}
+                setActionLocation={setActionLocation}
+                actionType={actionType}
+                setActionType={setActionType}
+                actionComment={actionComment}
+                setActionComment={setActionComment}
+                actionPennylaneCustomerId={actionPennylaneCustomerId}
+                setActionPennylaneCustomerId={setActionPennylaneCustomerId}
+                onApplyAction={applyAction}
+              />
+            </div>
+          </div>
+        </main>
       </div>
     </div>
   );
@@ -1164,14 +1229,14 @@ function HistoryList({ history }) {
 
 function StatCard({ title, value, icon: Icon }) {
   return (
-    <Card className="rounded-2xl shadow-sm">
-      <CardContent className="flex items-center justify-between p-5">
+    <Card className="rounded-3xl border-[#e4d4c2] bg-[#fffdf8] shadow-sm">
+      <CardContent className="flex items-center justify-between p-6">
         <div>
-          <p className="text-sm text-slate-500">{title}</p>
-          <p className="text-2xl font-semibold text-slate-900">{value}</p>
+          <p className="text-sm text-[#7a5f4b]">{title}</p>
+          <p className="text-3xl font-bold text-[#2d1b12]">{value}</p>
         </div>
-        <div className="rounded-2xl bg-slate-100 p-3">
-          <Icon className="h-5 w-5 text-slate-700" />
+        <div className="rounded-2xl bg-[#f0dfcd] p-3">
+          <Icon className="h-5 w-5 text-[#5b351f]" />
         </div>
       </CardContent>
     </Card>
@@ -1180,21 +1245,12 @@ function StatCard({ title, value, icon: Icon }) {
 
 function Info({ label, value, icon: Icon }) {
   return (
-    <div className="rounded-2xl border bg-white p-4">
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+    <div className="rounded-3xl border border-[#e4d4c2] bg-[#fffdf8] p-5 shadow-sm">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#7a5f4b]">
         <Icon className="h-4 w-4" />
         {label}
       </div>
-      <div className="break-words text-sm font-medium text-slate-900">{value}</div>
-    </div>
-  );
-}
-
-function Field({ label, children, className = "" }) {
-  return (
-    <div className={`space-y-2 ${className}`}>
-      <Label>{label}</Label>
-      {children}
+      <div className="break-words text-sm font-semibold text-[#2d1b12]">{value}</div>
     </div>
   );
 }
@@ -1204,7 +1260,7 @@ function Select({ value, onChange, children }) {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+      className="h-11 w-full rounded-2xl border border-[#d8c4ad] bg-[#fffdf8] px-4 py-2 text-sm text-[#2d1b12] shadow-sm outline-none focus:border-[#5b351f]"
     >
       {children}
     </select>
@@ -1213,8 +1269,32 @@ function Select({ value, onChange, children }) {
 
 function TabButton({ active, onClick, children }) {
   return (
-    <Button variant={active ? "default" : "outline"} className="rounded-xl" onClick={onClick}>
+    <Button
+      variant={active ? "default" : "outline"}
+      className={
+        active
+          ? "rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
+          : "rounded-2xl border-[#d8c4ad] bg-[#fffdf8] text-[#5b351f] hover:bg-[#f0dfcd]"
+      }
+      onClick={onClick}
+    >
       {children}
     </Button>
+  );
+}
+
+function SideNav({ icon, label, active = false }) {
+  return (
+    <button
+      type="button"
+      className={`flex w-full items-center gap-3 rounded-3xl px-5 py-4 text-left text-sm font-semibold transition ${
+        active
+          ? "bg-[#5b351f] text-white shadow-sm"
+          : "text-[#5b351f] hover:bg-[#fffaf3]"
+      }`}
+    >
+      <span className="text-xl">{icon}</span>
+      {label}
+    </button>
   );
 }

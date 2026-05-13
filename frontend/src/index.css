@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+:root {
+  --lpb-bg: #f4eadc;
+  --lpb-panel: #fffaf3;
+  --lpb-card: #fffdf8;
+  --lpb-brown: #5b351f;
+  --lpb-brown-dark: #3f2415;
+  --lpb-border: #e4d4c2;
+  --lpb-text: #2d1b12;
+  --lpb-muted: #7a5f4b;
+}
+
+body {
+  background: var(--lpb-bg);
+  color: var(--lpb-text);
+}
+
 button,
 [role="button"],
 a,
@@ -32,6 +48,7 @@ button:hover:not(:disabled),
 a:hover,
 .cursor-pointer:hover {
   opacity: 0.92;
+  transform: translateY(-1px);
 }
 
 button:active:not(:disabled),
