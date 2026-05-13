@@ -270,11 +270,11 @@ app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {
 
     const data = await response.json();
 
-    const customers = (data.customers || []).map((customer) => ({
+    const customers = (data.items || data.customers || []).map((customer) => ({
       id: customer.id,
       name: customer.name,
       label: customer.name,
-      email: customer.email,
+      email: customer.email || customer.emails?.[0] || "",
     }));
 
     res.json(customers);
