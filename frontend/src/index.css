@@ -1,1 +1,41 @@
 @import "tailwindcss";
+
+button,
+[role="button"],
+a,
+select,
+input[type="submit"],
+input[type="button"],
+.cursor-pointer {
+  cursor: pointer;
+}
+
+button:disabled,
+[disabled],
+.disabled {
+  cursor: not-allowed;
+}
+
+button,
+[role="button"],
+a {
+  transition:
+    transform 160ms ease,
+    opacity 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+button:hover:not(:disabled),
+[role="button"]:hover,
+a:hover,
+.cursor-pointer:hover {
+  opacity: 0.92;
+}
+
+button:active:not(:disabled),
+[role="button"]:active,
+a:active {
+  transform: scale(0.98);
+}
