@@ -83,6 +83,10 @@ function machineSelectSql() {
     date_mise_disposition as "dateMiseDisposition",
     commentaire,
     date_maj as "dateMaj",
+maintenance_start_date as "maintenanceStartDate",
+maintenance_reason as "maintenanceReason",
+maintenance_action as "maintenanceAction",
+maintenance_expected_return_date as "maintenanceExpectedReturnDate",
     pennylane_product_id as "pennylaneProductId",
     pennylane_customer_id as "pennylaneCustomerId",
     pennylane_purchase_invoice_id as "pennylanePurchaseInvoiceId",
@@ -613,37 +617,48 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
     const nextType = body.typeMiseDisposition || null;
     const nextCommentaire = body.commentaire ?? current.commentaire;
     const nextPennylaneCustomerId = body.pennylaneCustomerId || null;
-
-    const updatedResult = await client.query(
-      `
-      update machines
-      set
-        statut = $1,
-        client_id = $2,
-        lieu = $3,
-        type_mise_disposition = $4,
-        commentaire = $5,
-        date_maj = current_date,
-        date_mise_disposition = case
-          when $1 in ('En prêt', 'En location', 'Vendue') then current_date
-          when $1 in ('En stock', 'En maintenance') then null
-          else date_mise_disposition
-        end,
-        pennylane_customer_id = $6
-      where id = $7
-      returning
-        ${machineSelectSql()}
-      `,
-      [
-        nextStatut,
-        nextClientId,
-        nextLieu,
-        nextType,
-        nextCommentaire,
-        nextPennylaneCustomerId,
-        current.id,
-      ]
-    );
+const nextMaintenanceStartDate = toSqlDate(body.maintenanceStartDate) || current.maintenance_start_date;
+const nextMaintenanceReason = body.maintenanceReason ?? current.maintenance_reason;
+const nextMaintenanceAction = body.maintenanceAction ?? current.maintenance_action;
+const nextMaintenanceExpectedReturnDate = toSqlDate(body.maintenanceExpectedReturnDate) || current.maintenance_expected_return_date;
+const updatedResult = await client.query(
+  `
+  update machines
+  set
+    statut = $1,
+    client_id = $2,
+    lieu = $3,
+    type_mise_disposition = $4,
+    commentaire = $5,
+    date_maj = current_date,
+    date_mise_disposition = case
+      when $1 in ('En prêt', 'En location', 'Vendue') then current_date
+      when $1 in ('En stock', 'En maintenance') then null
+      else date_mise_disposition
+    end,
+    pennylane_customer_id = $6,
+    maintenance_start_date = $7,
+    maintenance_reason = $8,
+    maintenance_action = $9,
+    maintenance_expected_return_date = $10
+  where id = $11
+  returning
+    ${machineSelectSql()}
+  `,
+  [
+    nextStatut,
+    nextClientId,
+    nextLieu,
+    nextType,
+    nextCommentaire,
+    nextPennylaneCustomerId,
+    nextMaintenanceStartDate,
+    nextMaintenanceReason,
+    nextMaintenanceAction,
+    nextMaintenanceExpectedReturnDate,
+    current.id,
+  ]
+);
 
     const changes = [];
 
@@ -692,6 +707,23 @@ if (
   nextCommentaire !== current.commentaire
 ) {
   changes.push(`Commentaire : ${nextCommentaire}`);
+}
+
+if ((current.maintenance_reason || "") !== (nextMaintenanceReason || "")) {
+  changes.push(`Maintenance - motif : ${nextMaintenanceReason || "-"}`);
+}
+
+if ((current.maintenance_action || "") !== (nextMaintenanceAction || "")) {
+  changes.push(`Maintenance - action : ${nextMaintenanceAction || "-"}`);
+}
+
+if (
+  String(current.maintenance_expected_return_date || "") !==
+  String(nextMaintenanceExpectedReturnDate || "")
+) {
+  changes.push(
+    `Maintenance - retour prévu : ${nextMaintenanceExpectedReturnDate || "-"}`
+  );
 }
 
 const historyComment =
