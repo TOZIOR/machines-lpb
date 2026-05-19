@@ -614,7 +614,6 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
     const nextStatut = body.statut ?? current.statut;
     const nextClientId = body.clientId || null;
     const nextLieu = body.lieu ?? current.lieu;
-    const nextType = body.typeMiseDisposition || null;
     const nextCommentaire = body.commentaire ?? current.commentaire;
     const nextPennylaneCustomerId = body.pennylaneCustomerId || null;
 const nextMaintenanceStartDate = toSqlDate(body.maintenanceStartDate) || current.maintenance_start_date;
@@ -628,20 +627,19 @@ const updatedResult = await client.query(
     statut = $1,
     client_id = $2,
     lieu = $3,
-    type_mise_disposition = $4,
-    commentaire = $5,
+    commentaire = $4,
     date_maj = current_date,
     date_mise_disposition = case
       when $1 in ('En prêt', 'En location', 'Vendue') then current_date
       when $1 in ('En stock', 'En maintenance') then null
       else date_mise_disposition
     end,
-    pennylane_customer_id = $6,
-    maintenance_start_date = $7,
-    maintenance_reason = $8,
-    maintenance_action = $9,
-    maintenance_expected_return_date = $10
-  where id = $11
+    pennylane_customer_id = $5,
+    maintenance_start_date = $6,
+    maintenance_reason = $7,
+    maintenance_action = $8,
+    maintenance_expected_return_date = $9
+  where id = $10
   returning
     ${machineSelectSql()}
   `,

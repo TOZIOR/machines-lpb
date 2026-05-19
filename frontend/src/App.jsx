@@ -32,7 +32,6 @@ const STATUSES = [
   "Hors service",
 ];
 
-const ASSIGNMENT_TYPES = ["Prêt", "Location", "Vente"];
 
 async function apiFetch(path, options = {}) {
   try {
@@ -291,7 +290,6 @@ function handleLogout() {
   const [actionStatus, setActionStatus] = useState("En stock");
   const [actionClientId, setActionClientId] = useState("");
   const [actionLocation, setActionLocation] = useState("");
-  const [actionType, setActionType] = useState("");
   const [actionComment, setActionComment] = useState("");
   const [maintenanceStartDate, setMaintenanceStartDate] = useState("");
   const [maintenanceReason, setMaintenanceReason] = useState("");
@@ -425,7 +423,6 @@ function handleLogout() {
     setActionStatus(selectedMachine.statut || "En stock");
     setActionClientId(selectedMachine.clientId || "");
     setActionLocation(selectedMachine.lieu || "");
-    setActionType(selectedMachine.typeMiseDisposition || "");
     setActionComment("");
     setMaintenanceStartDate(selectedMachine.maintenanceStartDate || "");
     setMaintenanceReason(selectedMachine.maintenanceReason || "");
@@ -540,7 +537,6 @@ function handleLogout() {
           statut: actionStatus,
           clientId: actionClientId || "",
           lieu: actionLocation || "",
-          typeMiseDisposition: actionType || "",
           commentaire: actionComment || selectedMachine.commentaire || "",
           pennylaneCustomerId: actionPennylaneCustomerId || "",
           maintenanceStartDate,
@@ -824,8 +820,6 @@ if (!isAuthenticated) {
                 setActionStatus={setActionStatus}
                 actionLocation={actionLocation}
                 setActionLocation={setActionLocation}
-                actionType={actionType}
-                setActionType={setActionType}
                 actionComment={actionComment}
                 setActionComment={setActionComment}
                 maintenanceStartDate={maintenanceStartDate}
@@ -853,8 +847,7 @@ if (!isAuthenticated) {
 function MachineDetailPanel({
   machine, pennylaneCustomer, pennylaneProduct, purchaseInvoice, salesInvoice,
   history, pennylaneCustomers, activeTab, setActiveTab,
-  actionStatus, setActionStatus, actionLocation, setActionLocation, actionType, setActionType,
-  actionComment, setActionComment, maintenanceStartDate, setMaintenanceStartDate,
+  actionStatus, setActionStatus, actionLocation, setActionLocation, actionComment, setActionComment, maintenanceStartDate, setMaintenanceStartDate,
   maintenanceReason, setMaintenanceReason, maintenanceAction, setMaintenanceAction,
   maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate, actionPennylaneCustomerId,
   setActionPennylaneCustomerId, onApplyAction, labelSettings, setLabelSettings,
@@ -913,7 +906,6 @@ function MachineDetailPanel({
             <Info label="Fournisseur" value={machine.fournisseur || "-"} icon={Building2} />
             <Info label="Prix achat" value={formatAmount(machine.prixAchat)} icon={Package} />
             <Info label="Date mise à disposition" value={formatDate(machine.dateMiseDisposition)} icon={CalendarDays} />
-            <Info label="Type mise à disposition" value={machine.typeMiseDisposition || "-"} icon={ArrowRightLeft} />
             <Info label="Début maintenance" value={formatDate(machine.maintenanceStartDate)} icon={Wrench} />
             <Info label="Retour maintenance prévu" value={formatDate(machine.maintenanceExpectedReturnDate)} icon={CalendarDays} />
             <Info label="Facture achat" value={machine.factureAchat || "-"} icon={Link2} />
@@ -966,7 +958,6 @@ function MachineDetailPanel({
             ) : null}
             
             <Field label="Lieu"><Input value={actionLocation} onChange={(e) => setActionLocation(e.target.value)} /></Field>
-            <Field label="Type mise à disposition"><Select value={actionType} onChange={setActionType}><option value="">Aucun</option>{ASSIGNMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</Select></Field>
             <Field label="Client Pennylane">
   <PennylaneCustomerSearchSelect
     value={actionPennylaneCustomerId}
