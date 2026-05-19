@@ -17,6 +17,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || "change-me";
+const LOGIN_USERNAME = import.meta.env.VITE_LOGIN_USERNAME || "admin";
+const LOGIN_PASSWORD = import.meta.env.VITE_LOGIN_PASSWORD || "";
+const LOGIN_STORAGE_KEY = "lpb-machines-auth";
 
 const STATUSES = [
   "En stock",
@@ -200,7 +203,30 @@ function printQRCode(machine) {
 
 export default function App() {
   const routeInfo = getRouteInfo();
+const [isAuthenticated, setIsAuthenticated] = useState(
+  localStorage.getItem(LOGIN_STORAGE_KEY) === "true"
+);
+const [loginUsername, setLoginUsername] = useState("");
+const [loginPassword, setLoginPassword] = useState("");
+const [loginError, setLoginError] = useState("");
 
+function handleLogin(event) {
+  event.preventDefault();
+
+  if (loginUsername === LOGIN_USERNAME && loginPassword === LOGIN_PASSWORD) {
+    localStorage.setItem(LOGIN_STORAGE_KEY, "true");
+    setIsAuthenticated(true);
+    setLoginError("");
+    return;
+  }
+
+  setLoginError("Identifiant ou mot de passe incorrect.");
+}
+
+function handleLogout() {
+  localStorage.removeItem(LOGIN_STORAGE_KEY);
+  setIsAuthenticated(false);
+}
   const [clients, setClients] = useState([]);
   const [machines, setMachines] = useState([]);
   const [movements, setMovements] = useState([]);
@@ -538,6 +564,19 @@ export default function App() {
     setClients(clientsData);
     setSelectedMachineId(getMachineApiId(machineData));
   }
+
+if (!isAuthenticated) {
+  return (
+    <LoginPage
+      username={loginUsername}
+      password={loginPassword}
+      error={loginError}
+      setUsername={setLoginUsername}
+      setPassword={setLoginPassword}
+      onLogin={handleLogin}
+    />
+  );
+}
 
   if (isLoading) {
     return (
@@ -1168,6 +1207,58 @@ function TabButton({ active, onClick, children }) {
     </Button>
   );
 }
+
+function LoginPage({ username, password, error, setUsername, setPassword, onLogin }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#f4eadc] p-6 text-[#2d1b12]">
+      <Card className="w-full max-w-md rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
+        <CardHeader>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#5b351f] text-2xl text-white">
+              ⚙️
+            </div>
+            <div>
+              <CardTitle className="text-2xl text-[#2d1b12]">LPB Machines</CardTitle>
+              <p className="text-sm text-[#7a5f4b]">Connexion administrateur</p>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <form className="space-y-4" onSubmit={onLogin}>
+            {error ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            <Field label="Identifiant">
+              <Input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+              />
+            </Field>
+
+            <Field label="Mot de passe">
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </Field>
+
+            <Button className="w-full rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]" type="submit">
+              Se connecter
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 
 function SideNav({ icon, label, active = false }) {
   return (
