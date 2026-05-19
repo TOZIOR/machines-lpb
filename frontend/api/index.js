@@ -645,27 +645,67 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
       ]
     );
 
-    await client.query(
-      `
-      insert into machine_movements (
-        machine_id,
-        action,
-        ancien_statut,
-        nouveau_statut,
-        client_id,
-        commentaire
-      )
-      values ($1, $2, $3, $4, $5, $6)
-      `,
-      [
-        current.id,
-        body.action || "Mise à jour",
-        current.statut,
-        nextStatut,
-        nextClientId,
-        nextCommentaire || "Mise à jour",
-      ]
-    );
+    const changes = [];
+
+if (current.statut !== nextStatut) {
+  changes.push(`Statut : ${current.statut} → ${nextStatut}`);
+}
+
+if ((current.lieu || "") !== (nextLieu || "")) {
+  changes.push(`Lieu : ${current.lieu || "-"} → ${nextLieu || "-"}`);
+}
+
+if (
+  (current.type_mise_disposition || "") !==
+  (nextType || "")
+) {
+  changes.push(
+    `Type mise à disposition : ${current.type_mise_disposition || "-"} → ${nextType || "-"}`
+  );
+}
+
+if (
+  (current.pennylane_customer_id || "") !==
+  (nextPennylaneCustomerId || "")
+) {
+  changes.push(
+    `Client Pennylane modifié`
+  );
+}
+
+if (
+  nextCommentaire &&
+  nextCommentaire !== current.commentaire
+) {
+  changes.push(`Commentaire : ${nextCommentaire}`);
+}
+
+const historyComment =
+  changes.length > 0
+    ? changes.join(" | ")
+    : "Aucune modification";
+
+await client.query(
+  `
+  insert into machine_movements (
+    machine_id,
+    action,
+    ancien_statut,
+    nouveau_statut,
+    client_id,
+    commentaire
+  )
+  values ($1, $2, $3, $4, $5, $6)
+  `,
+  [
+    current.id,
+    body.action || "Mise à jour",
+    current.statut,
+    nextStatut,
+    nextClientId,
+    historyComment,
+  ]
+);
 
     await client.query("commit");
     res.json(updatedResult.rows[0]);
