@@ -668,11 +668,25 @@ if (
   (current.pennylane_customer_id || "") !==
   (nextPennylaneCustomerId || "")
 ) {
-  changes.push(
-    `Client Pennylane modifié`
-  );
-}
+  const oldClientResult = current.pennylane_customer_id
+    ? await client.query(
+        `select nom from clients where pennylane_customer_id = $1 limit 1`,
+        [current.pennylane_customer_id]
+      )
+    : { rows: [] };
 
+  const newClientResult = nextPennylaneCustomerId
+    ? await client.query(
+        `select nom from clients where pennylane_customer_id = $1 limit 1`,
+        [nextPennylaneCustomerId]
+      )
+    : { rows: [] };
+
+  const oldClientName = oldClientResult.rows[0]?.nom || "Sans client";
+  const newClientName = newClientResult.rows[0]?.nom || "Sans client";
+
+  changes.push(`Client Pennylane : ${oldClientName} → ${newClientName}`);
+}
 if (
   nextCommentaire &&
   nextCommentaire !== current.commentaire
