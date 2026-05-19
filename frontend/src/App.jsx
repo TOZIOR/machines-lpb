@@ -243,8 +243,7 @@ function handleLogout() {
   const [activeTab, setActiveTab] = useState("fiche");
 
   const [showMachineForm, setShowMachineForm] = useState(false);
-  const [showClientForm, setShowClientForm] = useState(false);
-
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -261,13 +260,6 @@ function handleLogout() {
     commentaire: "",
   });
 
-  const [clientForm, setClientForm] = useState({
-    nom: "",
-    adresse: "",
-    telephone: "",
-    email: "",
-    commentaire: "",
-  });
 
   const [actionStatus, setActionStatus] = useState("En stock");
   const [actionClientId, setActionClientId] = useState("");
@@ -464,23 +456,7 @@ function handleLogout() {
     }
   }
 
-  async function createClient() {
-    try {
-      setErrorMessage("");
-
-      const newClient = await apiFetch("/clients", {
-        method: "POST",
-        body: JSON.stringify(clientForm),
-      });
-
-      setClients((prev) => [...prev, newClient].sort((a, b) => a.nom.localeCompare(b.nom)));
-      setClientForm({ nom: "", adresse: "", telephone: "", email: "", commentaire: "" });
-      setShowClientForm(false);
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error.message);
-    }
-  }
+  
 
   async function createMachine() {
     try {
@@ -650,6 +626,14 @@ if (!isAuthenticated) {
                     {pennylaneStatus.connected ? "Pennylane connecté" : "Pennylane non connecté"}
                   </div>
                 </div>
+
+<Button
+  variant="outline"
+  className="rounded-2xl border-white bg-white text-[#5b351f] hover:bg-[#f0dfcd]"
+  onClick={handleLogout}
+>
+  Déconnexion
+</Button>
               </div>
             </div>
           </header>
@@ -724,9 +708,7 @@ if (!isAuthenticated) {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button variant="outline" className="rounded-2xl border-[#d8c4ad] bg-[#fffdf8] text-[#5b351f] hover:bg-[#f0dfcd]" onClick={() => setShowClientForm((v) => !v)}>
-                        Nouveau client
-                      </Button>
+                     
                       <Button className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]" onClick={() => setShowMachineForm((v) => !v)}>
                         <Plus className="mr-2 h-4 w-4" />
                         Ajouter
@@ -734,20 +716,7 @@ if (!isAuthenticated) {
                     </div>
                   </div>
 
-                  {showClientForm ? (
-                    <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffdf8] shadow-none">
-                      <CardContent className="grid gap-4 p-5 md:grid-cols-2">
-                        <Field label="Nom"><Input value={clientForm.nom} onChange={(e) => setClientForm({ ...clientForm, nom: e.target.value })} /></Field>
-                        <Field label="Téléphone"><Input value={clientForm.telephone} onChange={(e) => setClientForm({ ...clientForm, telephone: e.target.value })} /></Field>
-                        <Field label="Email"><Input value={clientForm.email} onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })} /></Field>
-                        <Field label="Adresse"><Input value={clientForm.adresse} onChange={(e) => setClientForm({ ...clientForm, adresse: e.target.value })} /></Field>
-                        <Field label="Commentaire" className="md:col-span-2"><Textarea value={clientForm.commentaire} onChange={(e) => setClientForm({ ...clientForm, commentaire: e.target.value })} /></Field>
-                        <div className="md:col-span-2">
-                          <Button onClick={createClient} className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]">Créer le client</Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : null}
+                  
 
                   {showMachineForm ? (
                     <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffdf8] shadow-none">
@@ -853,14 +822,11 @@ if (!isAuthenticated) {
                 purchaseInvoice={selectedPurchaseInvoice}
                 salesInvoice={selectedSalesInvoice}
                 history={machineHistory}
-                clients={clients}
                 pennylaneCustomers={pennylaneCustomers}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 actionStatus={actionStatus}
                 setActionStatus={setActionStatus}
-                actionClientId={actionClientId}
-                setActionClientId={setActionClientId}
                 actionLocation={actionLocation}
                 setActionLocation={setActionLocation}
                 actionType={actionType}
@@ -880,10 +846,9 @@ if (!isAuthenticated) {
 }
 
 function MachineDetailPanel({
-  machine, client, pennylaneCustomer, pennylaneProduct, purchaseInvoice, salesInvoice,
+  machine, pennylaneCustomer, pennylaneProduct, purchaseInvoice, salesInvoice,
   history, clients, pennylaneCustomers, activeTab, setActiveTab,
-  actionStatus, setActionStatus, actionClientId, setActionClientId,
-  actionLocation, setActionLocation, actionType, setActionType,
+  actionStatus, setActionStatus, actionLocation, setActionLocation, actionType, setActionType,
   actionComment, setActionComment, actionPennylaneCustomerId,
   setActionPennylaneCustomerId, onApplyAction,
 }) {
@@ -950,7 +915,7 @@ function MachineDetailPanel({
         {activeTab === "terrain" ? (
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Statut"><Select value={actionStatus} onChange={setActionStatus}>{STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</Select></Field>
-            <Field label="Client"><Select value={actionClientId} onChange={setActionClientId}><option value="">Sans client</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select></Field>
+            
             <Field label="Lieu"><Input value={actionLocation} onChange={(e) => setActionLocation(e.target.value)} /></Field>
             <Field label="Type mise à disposition"><Select value={actionType} onChange={setActionType}><option value="">Aucun</option>{ASSIGNMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</Select></Field>
             <Field label="Client Pennylane"><Select value={actionPennylaneCustomerId} onChange={setActionPennylaneCustomerId}><option value="">Aucun</option>{pennylaneCustomers.map((c) => <option key={c.id} value={c.id}>{c.name || c.label || c.id}</option>)}</Select></Field>
