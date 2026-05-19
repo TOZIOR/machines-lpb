@@ -922,7 +922,13 @@ function MachineDetailPanel({
             
             <Field label="Lieu"><Input value={actionLocation} onChange={(e) => setActionLocation(e.target.value)} /></Field>
             <Field label="Type mise à disposition"><Select value={actionType} onChange={setActionType}><option value="">Aucun</option>{ASSIGNMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</Select></Field>
-            <Field label="Client Pennylane"><Select value={actionPennylaneCustomerId} onChange={setActionPennylaneCustomerId}><option value="">Aucun</option>{pennylaneCustomers.map((c) => <option key={c.id} value={c.id}>{c.name || c.label || c.id}</option>)}</Select></Field>
+            <Field label="Client Pennylane">
+  <PennylaneCustomerSearchSelect
+    value={actionPennylaneCustomerId}
+    onChange={setActionPennylaneCustomerId}
+    customers={pennylaneCustomers}
+  />
+</Field>
             <Field label="Commentaire action" className="md:col-span-2"><Textarea value={actionComment} onChange={(e) => setActionComment(e.target.value)} /></Field>
             <div className="md:col-span-2">
               <Button className="rounded-xl bg-[#5b351f] text-white hover:bg-[#3f2415]" onClick={onApplyAction}>
@@ -1228,6 +1234,39 @@ function LoginPage({ username, password, error, setUsername, setPassword, onLogi
   );
 }
 
+function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
+  const [query, setQuery] = useState("");
+
+  const filteredCustomers = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return customers
+      .filter((customer) => {
+        const label = `${customer.name || ""} ${customer.label || ""} ${customer.email || ""}`.toLowerCase();
+        return !q || label.includes(q);
+      })
+      .slice(0, 50);
+  }, [customers, query]);
+
+  return (
+    <div className="space-y-2">
+      <Input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Rechercher un client Pennylane..."
+      />
+
+      <Select value={value} onChange={onChange}>
+        <option value="">Aucun</option>
+        {filteredCustomers.map((customer) => (
+          <option key={customer.id} value={customer.id}>
+            {customer.name || customer.label || customer.id}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}
 
 function SideNav({ icon, label, active = false }) {
   return (
