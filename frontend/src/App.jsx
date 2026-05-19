@@ -293,7 +293,12 @@ function handleLogout() {
   const [actionLocation, setActionLocation] = useState("");
   const [actionType, setActionType] = useState("");
   const [actionComment, setActionComment] = useState("");
+  const [maintenanceStartDate, setMaintenanceStartDate] = useState("");
+  const [maintenanceReason, setMaintenanceReason] = useState("");
+  const [maintenanceAction, setMaintenanceAction] = useState("");
+  const [maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate] = useState("");
   const [actionPennylaneCustomerId, setActionPennylaneCustomerId] = useState("");
+
 
   async function loadAllData() {
     try {
@@ -422,6 +427,10 @@ function handleLogout() {
     setActionLocation(selectedMachine.lieu || "");
     setActionType(selectedMachine.typeMiseDisposition || "");
     setActionComment("");
+    setMaintenanceStartDate(selectedMachine.maintenanceStartDate || "");
+    setMaintenanceReason(selectedMachine.maintenanceReason || "");
+    setMaintenanceAction(selectedMachine.maintenanceAction || "");
+    setMaintenanceExpectedReturnDate(selectedMachine.maintenanceExpectedReturnDate || "");
     setActionPennylaneCustomerId(selectedMachine.pennylaneCustomerId || "");
   }, [selectedMachine]);
 
@@ -491,7 +500,7 @@ function handleLogout() {
 
       const createdMachine = await apiFetch("/machines", {
         method: "POST",
-       body: JSON.stringify(machineForm),
+        body: JSON.stringify(machineForm),
       });
 
       const createdId = getMachineApiId(createdMachine);
@@ -511,7 +520,6 @@ function handleLogout() {
         commentaire: "",
       });
 
-      
       setShowMachineForm(false);
     } catch (error) {
       console.error(error);
@@ -535,6 +543,10 @@ function handleLogout() {
           typeMiseDisposition: actionType || "",
           commentaire: actionComment || selectedMachine.commentaire || "",
           pennylaneCustomerId: actionPennylaneCustomerId || "",
+          maintenanceStartDate,
+          maintenanceReason,
+          maintenanceAction,
+          maintenanceExpectedReturnDate,
           action: "Mise à jour",
         }),
       });
@@ -733,6 +745,7 @@ if (!isAuthenticated) {
                         <Field label="Facture achat"><Input value={machineForm.factureAchat} onChange={(e) => setMachineForm({ ...machineForm, factureAchat: e.target.value })} /></Field>
                         <Field label="Lieu"><Input value={machineForm.lieu} onChange={(e) => setMachineForm({ ...machineForm, lieu: e.target.value })} /></Field>
 
+
                         <Field label="Commentaire" className="md:col-span-2"><Textarea value={machineForm.commentaire} onChange={(e) => setMachineForm({ ...machineForm, commentaire: e.target.value })} /></Field>
 
                         <div className="md:col-span-2">
@@ -815,6 +828,14 @@ if (!isAuthenticated) {
                 setActionType={setActionType}
                 actionComment={actionComment}
                 setActionComment={setActionComment}
+                maintenanceStartDate={maintenanceStartDate}
+                setMaintenanceStartDate={setMaintenanceStartDate}
+                maintenanceReason={maintenanceReason}
+                setMaintenanceReason={setMaintenanceReason}
+                maintenanceAction={maintenanceAction}
+                setMaintenanceAction={setMaintenanceAction}
+                maintenanceExpectedReturnDate={maintenanceExpectedReturnDate}
+                setMaintenanceExpectedReturnDate={setMaintenanceExpectedReturnDate}
                 actionPennylaneCustomerId={actionPennylaneCustomerId}
                 setActionPennylaneCustomerId={setActionPennylaneCustomerId}
                 onApplyAction={applyAction}
@@ -833,7 +854,9 @@ function MachineDetailPanel({
   machine, pennylaneCustomer, pennylaneProduct, purchaseInvoice, salesInvoice,
   history, pennylaneCustomers, activeTab, setActiveTab,
   actionStatus, setActionStatus, actionLocation, setActionLocation, actionType, setActionType,
-  actionComment, setActionComment, actionPennylaneCustomerId,
+  actionComment, setActionComment, maintenanceStartDate, setMaintenanceStartDate,
+  maintenanceReason, setMaintenanceReason, maintenanceAction, setMaintenanceAction,
+  maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate, actionPennylaneCustomerId,
   setActionPennylaneCustomerId, onApplyAction, labelSettings, setLabelSettings,
 }) {
   if (!machine) {
@@ -891,9 +914,19 @@ function MachineDetailPanel({
             <Info label="Prix achat" value={formatAmount(machine.prixAchat)} icon={Package} />
             <Info label="Date mise à disposition" value={formatDate(machine.dateMiseDisposition)} icon={CalendarDays} />
             <Info label="Type mise à disposition" value={machine.typeMiseDisposition || "-"} icon={ArrowRightLeft} />
-            <Info label="Produit Pennylane" value={pennylaneProduct?.label || pennylaneProduct?.name || "-"} icon={Link2} />
-            <Info label="Facture achat" value={purchaseInvoice?.number || machine.factureAchat || "-"} icon={Link2} />
-            <Info label="Facture vente" value={salesInvoice?.number || "-"} icon={Link2} />
+            <Info label="Début maintenance" value={formatDate(machine.maintenanceStartDate)} icon={Wrench} />
+            <Info label="Retour maintenance prévu" value={formatDate(machine.maintenanceExpectedReturnDate)} icon={CalendarDays} />
+            <Info label="Facture achat" value={machine.factureAchat || "-"} icon={Link2} />
+            {machine.maintenanceReason ? (
+              <div className="md:col-span-2">
+                <Info label="Motif maintenance" value={machine.maintenanceReason} icon={Wrench} />
+              </div>
+            ) : null}
+            {machine.maintenanceAction ? (
+              <div className="md:col-span-2">
+                <Info label="Action maintenance" value={machine.maintenanceAction} icon={Wrench} />
+              </div>
+            ) : null}
             <div className="md:col-span-2">
               <Info label="Commentaire" value={machine.commentaire || "-"} icon={Wrench} />
             </div>
@@ -903,6 +936,34 @@ function MachineDetailPanel({
         {activeTab === "terrain" ? (
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Statut"><Select value={actionStatus} onChange={setActionStatus}>{STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</Select></Field>
+
+            {actionStatus === "En maintenance" ? (
+              <>
+                <Field label="Date début maintenance">
+                  <Input type="date" value={maintenanceStartDate} onChange={(e) => setMaintenanceStartDate(e.target.value)} />
+                </Field>
+
+                <Field label="Retour prévu">
+                  <Input type="date" value={maintenanceExpectedReturnDate} onChange={(e) => setMaintenanceExpectedReturnDate(e.target.value)} />
+                </Field>
+
+                <Field label="Motif / panne" className="md:col-span-2">
+                  <Textarea
+                    value={maintenanceReason}
+                    onChange={(e) => setMaintenanceReason(e.target.value)}
+                    placeholder="Ex : fuite, broyeur bloqué, détartrage..."
+                  />
+                </Field>
+
+                <Field label="Action réalisée" className="md:col-span-2">
+                  <Textarea
+                    value={maintenanceAction}
+                    onChange={(e) => setMaintenanceAction(e.target.value)}
+                    placeholder="Ex : nettoyage, changement joint, test OK..."
+                  />
+                </Field>
+              </>
+            ) : null}
             
             <Field label="Lieu"><Input value={actionLocation} onChange={(e) => setActionLocation(e.target.value)} /></Field>
             <Field label="Type mise à disposition"><Select value={actionType} onChange={setActionType}><option value="">Aucun</option>{ASSIGNMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</Select></Field>
@@ -1673,99 +1734,39 @@ function CheckboxField({ label, checked, onChange }) {
 
 
 function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
-  const selectedCustomer = customers.find((customer) => String(customer.id) === String(value)) || null;
-  const [query, setQuery] = useState(selectedCustomer?.name || "");
-  const [isOpen, setIsOpen] = useState(false);
-
-  useEffect(() => {
-    const customer = customers.find((item) => String(item.id) === String(value));
-    setQuery(customer?.name || customer?.label || "");
-  }, [value, customers]);
+  const [query, setQuery] = useState("");
 
   const filteredCustomers = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return customers
       .filter((customer) => {
-        const label = [
-          customer.name,
-          customer.label,
-          customer.email,
-          customer.phone,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-
+        const label = `${customer.name || ""} ${customer.label || ""} ${customer.email || ""}`.toLowerCase();
         return !q || label.includes(q);
       })
-      .slice(0, 12);
+      .slice(0, 50);
   }, [customers, query]);
 
-  function selectCustomer(customer) {
-    onChange(String(customer.id));
-    setQuery(customer.name || customer.label || customer.id);
-    setIsOpen(false);
-  }
-
-  function clearCustomer() {
-    onChange("");
-    setQuery("");
-    setIsOpen(false);
-  }
-
   return (
-    <div className="relative">
+    <div className="space-y-2">
       <Input
         value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setIsOpen(true);
-        }}
-        onFocus={() => setIsOpen(true)}
-        placeholder="Tape le nom du client..."
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Rechercher un client Pennylane..."
       />
 
-      {value ? (
-        <button
-          type="button"
-          onClick={clearCustomer}
-          className="mt-2 text-xs font-semibold text-[#5b351f] underline"
-        >
-          Retirer le client
-        </button>
-      ) : null}
-
-      {isOpen ? (
-        <div className="absolute z-50 mt-2 max-h-72 w-full overflow-auto rounded-2xl border border-[#d8c4ad] bg-white shadow-lg">
-          {filteredCustomers.length > 0 ? (
-            filteredCustomers.map((customer) => (
-              <button
-                key={customer.id}
-                type="button"
-                onMouseDown={() => selectCustomer(customer)}
-                className="block w-full border-b border-[#f0dfcd] px-4 py-3 text-left hover:bg-[#f7eddf]"
-              >
-                <div className="text-sm font-bold text-[#2d1b12]">
-                  {customer.name || customer.label || customer.id}
-                </div>
-                {customer.email ? (
-                  <div className="text-xs text-[#7a5f4b]">
-                    {customer.email}
-                  </div>
-                ) : null}
-              </button>
-            ))
-          ) : (
-            <div className="px-4 py-3 text-sm text-[#7a5f4b]">
-              Aucun client trouvé.
-            </div>
-          )}
-        </div>
-      ) : null}
+      <Select value={value} onChange={onChange}>
+        <option value="">Aucun</option>
+        {filteredCustomers.map((customer) => (
+          <option key={customer.id} value={customer.id}>
+            {customer.name || customer.label || customer.id}
+          </option>
+        ))}
+      </Select>
     </div>
   );
 }
+
 function SideNav({ icon, label, active = false }) {
   return (
     <button
