@@ -20,6 +20,7 @@ const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || "change-me";
 const LOGIN_USERNAME = import.meta.env.VITE_LOGIN_USERNAME || "admin";
 const LOGIN_PASSWORD = import.meta.env.VITE_LOGIN_PASSWORD || "";
 const LOGIN_STORAGE_KEY = "lpb-machines-auth";
+const LABEL_STORAGE_KEY = "lpb-machines-label-settings";
 
 const STATUSES = [
   "En stock",
@@ -260,6 +261,32 @@ function handleLogout() {
     commentaire: "",
   });
 
+  const [labelSettings, setLabelSettings] = useState(() => {
+    const saved = localStorage.getItem(LABEL_STORAGE_KEY);
+
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        localStorage.removeItem(LABEL_STORAGE_KEY);
+      }
+    }
+
+    return {
+      width: 100,
+      height: 70,
+      borderRadius: 6,
+      company1: "SAS LPB TORREFACTION",
+      company2: "7 D Boulevard Eiffel",
+      company3: "21600 LONGVIC",
+      company4: "03.80.54.39.40",
+      showBorder: true,
+      showQr: true,
+      showMachineCode: true,
+      showModel: true,
+      showCompany: true,
+    };
+  });
 
   const [actionStatus, setActionStatus] = useState("En stock");
   const [actionClientId, setActionClientId] = useState("");
@@ -333,6 +360,10 @@ function handleLogout() {
   useEffect(() => {
     loadAllData();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(LABEL_STORAGE_KEY, JSON.stringify(labelSettings));
+  }, [labelSettings]);
 
   const selectedMachine = useMemo(() => {
     if (routeInfo.isMachineRoute) {
@@ -819,6 +850,8 @@ if (!isAuthenticated) {
                 actionPennylaneCustomerId={actionPennylaneCustomerId}
                 setActionPennylaneCustomerId={setActionPennylaneCustomerId}
                 onApplyAction={applyAction}
+                labelSettings={labelSettings}
+                setLabelSettings={setLabelSettings}
               />
             </div>
           </div>
@@ -830,10 +863,10 @@ if (!isAuthenticated) {
 
 function MachineDetailPanel({
   machine, pennylaneCustomer, pennylaneProduct, purchaseInvoice, salesInvoice,
-  history, clients, pennylaneCustomers, activeTab, setActiveTab,
+  history, pennylaneCustomers, activeTab, setActiveTab,
   actionStatus, setActionStatus, actionLocation, setActionLocation, actionType, setActionType,
   actionComment, setActionComment, actionPennylaneCustomerId,
-  setActionPennylaneCustomerId, onApplyAction,
+  setActionPennylaneCustomerId, onApplyAction, labelSettings, setLabelSettings,
 }) {
   if (!machine) {
     return (
@@ -871,6 +904,7 @@ function MachineDetailPanel({
           <TabButton active={activeTab === "terrain"} onClick={() => setActiveTab("terrain")}>Mise à jour terrain</TabButton>
           <TabButton active={activeTab === "historique"} onClick={() => setActiveTab("historique")}>Historique</TabButton>
           <TabButton active={activeTab === "qr"} onClick={() => setActiveTab("qr")}>QR page</TabButton>
+          <TabButton active={activeTab === "etiquette"} onClick={() => setActiveTab("etiquette")}>Étiquette QR</TabButton>
         </div>
       </CardHeader>
 
@@ -878,10 +912,10 @@ function MachineDetailPanel({
         {activeTab === "fiche" ? (
           <div className="grid gap-4 md:grid-cols-2">
             <Info
-  label="Client Pennylane"
-  value={pennylaneCustomer?.name || pennylaneCustomer?.label || "Sans client"}
-  icon={UserRound}
-/>
+              label="Client Pennylane"
+              value={pennylaneCustomer?.name || pennylaneCustomer?.label || "Sans client"}
+              icon={UserRound}
+            />
             <Info label="Lieu" value={machine.lieu || "-"} icon={MapPin} />
             <Info label="N° série" value={machine.numeroSerie || "-"} icon={Boxes} />
             <Info label="Date achat" value={formatDate(machine.dateAchat)} icon={CalendarDays} />
@@ -889,7 +923,6 @@ function MachineDetailPanel({
             <Info label="Prix achat" value={formatAmount(machine.prixAchat)} icon={Package} />
             <Info label="Date mise à disposition" value={formatDate(machine.dateMiseDisposition)} icon={CalendarDays} />
             <Info label="Type mise à disposition" value={machine.typeMiseDisposition || "-"} icon={ArrowRightLeft} />
-            <Info label="Client Pennylane" value={pennylaneCustomer?.name || pennylaneCustomer?.label || "-"} icon={ShieldCheck} />
             <Info label="Produit Pennylane" value={pennylaneProduct?.label || pennylaneProduct?.name || "-"} icon={Link2} />
             <Info label="Facture achat" value={purchaseInvoice?.number || machine.factureAchat || "-"} icon={Link2} />
             <Info label="Facture vente" value={salesInvoice?.number || "-"} icon={Link2} />
@@ -923,6 +956,13 @@ function MachineDetailPanel({
 
         {activeTab === "historique" ? <HistoryList history={history} /> : null}
         {activeTab === "qr" ? <QrPanel machine={machine} /> : null}
+        {activeTab === "etiquette" ? (
+          <QrLabelEditor
+            machine={machine}
+            settings={labelSettings}
+            setSettings={setLabelSettings}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -1216,6 +1256,453 @@ function LoginPage({ username, password, error, setUsername, setPassword, onLogi
     </div>
   );
 }
+
+
+function getMachineLabelTitle(machine) {
+  return `${machine?.marque || ""} ${machine?.modele || ""}`.trim() || "Machine";
+}
+
+function clampNumber(value, fallback, min, max) {
+  const number = Number(value);
+
+  if (Number.isNaN(number)) return fallback;
+  return Math.min(Math.max(number, min), max);
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+
+  ctx.beginPath();
+  ctx.moveTo(x + safeRadius, y);
+  ctx.lineTo(x + width - safeRadius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  ctx.lineTo(x + width, y + height - safeRadius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  ctx.lineTo(x + safeRadius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  ctx.lineTo(x, y + safeRadius);
+  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
+  ctx.closePath();
+}
+
+async function downloadMachineLabelPNG(machine, settings) {
+  const widthMm = clampNumber(settings.width, 100, 50, 150);
+  const heightMm = clampNumber(settings.height, 70, 30, 100);
+  const scale = 12;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const width = Math.round(widthMm * scale);
+  const height = Math.round(heightMm * scale);
+  const padding = Math.round(7 * scale);
+  const qrSize = Math.round(Math.min(height * 0.58, width * 0.34));
+
+  canvas.width = width;
+  canvas.height = height;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+
+  if (settings.showBorder) {
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = Math.max(2, Math.round(0.35 * scale));
+    drawRoundedRect(ctx, Math.round(1.5 * scale), Math.round(1.5 * scale), width - Math.round(3 * scale), height - Math.round(3 * scale), Math.round(settings.borderRadius * scale));
+    ctx.stroke();
+  }
+
+  const qrDataUrl = await QRCodeLib.toDataURL(getMachinePublicUrl(machine), {
+    width: qrSize,
+    margin: 1,
+  });
+  const qrImage = await loadImage(qrDataUrl);
+
+  const leftX = padding;
+  const qrY = padding + Math.round(2 * scale);
+
+  if (settings.showQr) {
+    ctx.drawImage(qrImage, leftX, qrY, qrSize, qrSize);
+  }
+
+  if (settings.showMachineCode) {
+    ctx.fillStyle = "#000000";
+    ctx.textAlign = "center";
+    ctx.font = `bold ${Math.round(5.8 * scale)}px Arial`;
+    ctx.fillText(getMachineCode(machine), leftX + qrSize / 2, qrY + qrSize + Math.round(10 * scale));
+  }
+
+  const rightX = leftX + qrSize + Math.round(10 * scale);
+  const rightW = width - rightX - padding;
+  let y = padding + Math.round(13 * scale);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#000000";
+
+  if (settings.showModel) {
+    ctx.font = `bold ${Math.round(7.2 * scale)}px Arial`;
+    ctx.fillText(getMachineLabelTitle(machine).toUpperCase(), rightX, y, rightW);
+    y += Math.round(14 * scale);
+  }
+
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = Math.max(1, Math.round(0.25 * scale));
+  ctx.beginPath();
+  ctx.moveTo(rightX, y);
+  ctx.lineTo(rightX + rightW, y);
+  ctx.stroke();
+
+  y += Math.round(9 * scale);
+
+  if (settings.showCompany) {
+    ctx.font = `bold ${Math.round(4.8 * scale)}px Arial`;
+    ctx.fillText(settings.company1 || "", rightX, y, rightW);
+    y += Math.round(6.4 * scale);
+
+    ctx.font = `${Math.round(4.3 * scale)}px Arial`;
+    ctx.fillText(settings.company2 || "", rightX, y, rightW);
+    y += Math.round(5.8 * scale);
+    ctx.fillText(settings.company3 || "", rightX, y, rightW);
+    y += Math.round(5.8 * scale);
+    ctx.fillText(settings.company4 || "", rightX, y, rightW);
+  }
+
+  const link = document.createElement("a");
+  link.href = canvas.toDataURL("image/png");
+  link.download = `Etiquette-${getMachineCode(machine)}.png`;
+  link.click();
+}
+
+async function printMachineLabel(machine, settings) {
+  const qrDataUrl = await QRCodeLib.toDataURL(getMachinePublicUrl(machine), {
+    width: 400,
+    margin: 1,
+  });
+
+  const width = clampNumber(settings.width, 100, 50, 150);
+  const height = clampNumber(settings.height, 70, 30, 100);
+  const radius = clampNumber(settings.borderRadius, 6, 0, 20);
+  const code = getMachineCode(machine);
+  const model = getMachineLabelTitle(machine).toUpperCase();
+
+  const printWindow = window.open("", "_blank", "width=900,height=700");
+  if (!printWindow) return;
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Étiquette ${code}</title>
+        <style>
+          @page {
+            size: ${width}mm ${height}mm;
+            margin: 0;
+          }
+
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            padding: 0;
+            background: white;
+            font-family: Arial, sans-serif;
+          }
+
+          .label {
+            width: ${width}mm;
+            height: ${height}mm;
+            padding: 7mm;
+            display: flex;
+            align-items: center;
+            gap: 10mm;
+            border: ${settings.showBorder ? "0.35mm solid #000" : "none"};
+            border-radius: ${radius}mm;
+            overflow: hidden;
+          }
+
+          .left {
+            width: 34mm;
+            text-align: center;
+            flex: 0 0 34mm;
+          }
+
+          .qr {
+            width: 34mm;
+            height: 34mm;
+            display: ${settings.showQr ? "block" : "none"};
+          }
+
+          .code {
+            margin-top: 5mm;
+            font-size: 6mm;
+            font-weight: 800;
+            display: ${settings.showMachineCode ? "block" : "none"};
+          }
+
+          .right {
+            flex: 1;
+            min-width: 0;
+          }
+
+          .model {
+            font-size: 7mm;
+            font-weight: 900;
+            line-height: 1.1;
+            margin-bottom: 8mm;
+            display: ${settings.showModel ? "block" : "none"};
+          }
+
+          .rule {
+            border-top: 0.3mm solid #000;
+            margin-bottom: 6mm;
+          }
+
+          .company {
+            display: ${settings.showCompany ? "block" : "none"};
+          }
+
+          .company-name {
+            font-size: 4.8mm;
+            font-weight: 900;
+            margin-bottom: 2mm;
+          }
+
+          .company-line {
+            font-size: 4.3mm;
+            line-height: 1.3;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="label">
+          <div class="left">
+            <img class="qr" src="${qrDataUrl}" />
+            <div class="code">${code}</div>
+          </div>
+
+          <div class="right">
+            <div class="model">${model}</div>
+            <div class="rule"></div>
+
+            <div class="company">
+              <div class="company-name">${settings.company1 || ""}</div>
+              <div class="company-line">${settings.company2 || ""}</div>
+              <div class="company-line">${settings.company3 || ""}</div>
+              <div class="company-line">${settings.company4 || ""}</div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          window.onload = function () {
+            window.print();
+          };
+        </script>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+}
+
+function QrLabelEditor({ machine, settings, setSettings }) {
+  const code = getMachineCode(machine);
+  const url = getMachinePublicUrl(machine);
+  const model = getMachineLabelTitle(machine).toUpperCase();
+
+  function updateSetting(key, value) {
+    setSettings({
+      ...settings,
+      [key]: value,
+    });
+  }
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffdf8] shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-xl text-[#2d1b12]">Paramètres étiquette QR</CardTitle>
+          <p className="text-sm text-[#7a5f4b]">
+            Dimensions conseillées : 100 mm × 70 mm. Les réglages sont sauvegardés sur cet ordinateur.
+          </p>
+        </CardHeader>
+
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field label="Largeur (mm)">
+              <Input
+                type="number"
+                value={settings.width}
+                onChange={(e) => updateSetting("width", clampNumber(e.target.value, 100, 50, 150))}
+              />
+            </Field>
+
+            <Field label="Hauteur (mm)">
+              <Input
+                type="number"
+                value={settings.height}
+                onChange={(e) => updateSetting("height", clampNumber(e.target.value, 70, 30, 100))}
+              />
+            </Field>
+
+            <Field label="Coins arrondis (mm)">
+              <Input
+                type="number"
+                value={settings.borderRadius}
+                onChange={(e) => updateSetting("borderRadius", clampNumber(e.target.value, 6, 0, 20))}
+              />
+            </Field>
+          </div>
+
+          <Separator />
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <CheckboxField
+              label="Afficher QR Code"
+              checked={settings.showQr}
+              onChange={(checked) => updateSetting("showQr", checked)}
+            />
+            <CheckboxField
+              label="Afficher numéro machine"
+              checked={settings.showMachineCode}
+              onChange={(checked) => updateSetting("showMachineCode", checked)}
+            />
+            <CheckboxField
+              label="Afficher modèle"
+              checked={settings.showModel}
+              onChange={(checked) => updateSetting("showModel", checked)}
+            />
+            <CheckboxField
+              label="Afficher bordure"
+              checked={settings.showBorder}
+              onChange={(checked) => updateSetting("showBorder", checked)}
+            />
+          </div>
+
+          <Separator />
+
+          <Field label="Société">
+            <Input value={settings.company1} onChange={(e) => updateSetting("company1", e.target.value)} />
+          </Field>
+
+          <Field label="Adresse">
+            <Input value={settings.company2} onChange={(e) => updateSetting("company2", e.target.value)} />
+          </Field>
+
+          <Field label="Code postal + Ville">
+            <Input value={settings.company3} onChange={(e) => updateSetting("company3", e.target.value)} />
+          </Field>
+
+          <Field label="Téléphone">
+            <Input value={settings.company4} onChange={(e) => updateSetting("company4", e.target.value)} />
+          </Field>
+
+          <div className="flex flex-wrap gap-2 pt-2">
+            <Button
+              className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
+              onClick={() => printMachineLabel(machine, settings)}
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Imprimer l’étiquette
+            </Button>
+
+            <Button
+              variant="outline"
+              className="rounded-2xl border-[#d8c4ad] bg-[#fffdf8] text-[#5b351f] hover:bg-[#f0dfcd]"
+              onClick={() => downloadMachineLabelPNG(machine, settings)}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Télécharger PNG
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffdf8] shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-xl text-[#2d1b12]">Aperçu</CardTitle>
+          <p className="text-sm text-[#7a5f4b]">
+            Étiquette machine {code} · URL QR : {url}
+          </p>
+        </CardHeader>
+
+        <CardContent>
+          <div className="overflow-auto rounded-3xl border border-[#eadcc9] bg-white p-6">
+            <div
+              className="mx-auto bg-white"
+              style={{
+                width: `${settings.width}mm`,
+                height: `${settings.height}mm`,
+                padding: "7mm",
+                border: settings.showBorder ? "0.35mm solid #000" : "none",
+                borderRadius: `${settings.borderRadius}mm`,
+              }}
+            >
+              <div className="flex h-full items-center gap-[10mm]">
+                <div className="w-[34mm] shrink-0 text-center">
+                  {settings.showQr ? <QRCodeSVG value={url} size={128} /> : null}
+
+                  {settings.showMachineCode ? (
+                    <div className="mt-[5mm] text-[6mm] font-extrabold leading-none text-black">
+                      {code}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="min-w-0 flex-1 text-black">
+                  {settings.showModel ? (
+                    <div className="mb-[8mm] text-[7mm] font-black leading-tight">
+                      {model}
+                    </div>
+                  ) : null}
+
+                  <div className="mb-[6mm] border-t border-black" />
+
+                  {settings.showCompany ? (
+                    <div>
+                      <div className="mb-[2mm] text-[4.8mm] font-black leading-tight">
+                        {settings.company1}
+                      </div>
+                      <div className="text-[4.3mm] leading-tight">{settings.company2}</div>
+                      <div className="text-[4.3mm] leading-tight">{settings.company3}</div>
+                      <div className="text-[4.3mm] leading-tight">{settings.company4}</div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-4 rounded-2xl bg-[#f0dfcd] p-3 text-sm text-[#5b351f]">
+            Pour l’impression : choisis une taille réelle à 100 %, sans mise à l’échelle.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CheckboxField({ label, checked, onChange }) {
+  return (
+    <label className="flex items-center gap-3 rounded-2xl border border-[#e4d4c2] bg-white px-4 py-3 text-sm font-medium text-[#5b351f]">
+      <input
+        type="checkbox"
+        checked={Boolean(checked)}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4"
+      />
+      {label}
+    </label>
+  );
+}
+
 
 function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
   const [query, setQuery] = useState("");
