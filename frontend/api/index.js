@@ -20,6 +20,7 @@ app.use(express.json());
 
 function errorResponse(res, error, label = "API ERROR") {
   console.error(label, error);
+
   return res.status(500).json({
     error: error.message,
     detail: error.detail || null,
@@ -52,6 +53,7 @@ function toSqlDate(value) {
   }
 
   const parsed = new Date(value);
+
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toISOString().slice(0, 10);
   }
@@ -97,9 +99,80 @@ async function findMachineByCodeOrUuid(value, db = pool) {
   return result.rows[0] || null;
 }
 
+function normalizePennylaneCustomer(customer) {
+  const name =
+    customer.name ||
+    customer.company_name ||
+    customer.label ||
+    `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
+    customer.id;
+
+  return {
+    id: String(customer.id),
+    name,
+    label: name,
+    email: customer.email || customer.emails?.[0] || "",
+    phone: customer.phone || customer.phone_number || "",
+    address:
+      typeof customer.address === "string"
+        ? customer.address
+        : typeof customer.billing_address === "string"
+        ? customer.billing_address
+        : "",
+  };
+}
+
+async function fetchAllPennylaneCustomers() {
+  if (!PENNYLANE_API_KEY) {
+    throw new Error("PENNYLANE_API_KEY manquante");
+  }
+
+  let allCustomers = [];
+  let cursor = null;
+  let page = 0;
+
+  do {
+    page += 1;
+
+    const url = new URL("https://app.pennylane.com/api/external/v2/customers");
+    url.searchParams.set("limit", "100");
+
+    if (cursor) {
+      url.searchParams.set("cursor", cursor);
+    }
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${PENNYLANE_API_KEY}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Erreur API Pennylane ${response.status} : ${text}`);
+    }
+
+    const data = await response.json();
+    const items = data.items || data.customers || [];
+
+    allCustomers = [...allCustomers, ...items];
+
+    cursor = data.next_cursor || data.nextCursor || null;
+
+    if (!data.has_more && !data.hasMore) {
+      cursor = null;
+    }
+  } while (cursor && page < 20);
+
+  return allCustomers.map(normalizePennylaneCustomer);
+}
+
 app.get("/api/health", async (_req, res) => {
   try {
     await pool.query("select 1");
+
     res.json({
       ok: true,
       database: true,
@@ -237,89 +310,21 @@ app.get("/api/public/machines/:code/movements", async (req, res) => {
 });
 
 app.get("/api/pennylane/status", requireAdmin, (_req, res) => {
-  res.json({ connected: false, lastSyncAt: "" });
+  res.json({
+    connected: Boolean(PENNYLANE_API_KEY),
+    lastSyncAt: "",
+  });
 });
 
-app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {
+app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {
   try {
-    if (!PENNYLANE_API_KEY) {
-      return res.status(500).json({
-        error: "PENNYLANE_API_KEY manquante",
-      });
-    }
-
-    let allCustomers = [];
-    let cursor = null;
-    let page = 0;
-
-    do {
-      page += 1;
-
-      const url = new URL("https://app.pennylane.com/api/external/v2/customers");
-      url.searchParams.set("limit", "100");
-
-      if (cursor) {
-        url.searchParams.set("cursor", cursor);
-      }
-
-      const response = await fetch(url.toString(), {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${PENNYLANE_API_KEY}`,
-          Accept: "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-
-        return res.status(response.status).json({
-          error: "Erreur API Pennylane",
-          detail: text,
-        });
-      }
-
-      const data = await response.json();
-      const items = data.items || data.customers || [];
-
-      allCustomers = [...allCustomers, ...items];
-
-      cursor = data.next_cursor || data.nextCursor || null;
-
-      if (!data.has_more && !data.hasMore) {
-        cursor = null;
-      }
-    } while (cursor && page < 20);
-
-    const customers = allCustomers.map((customer) => ({
-      id: customer.id,
-      name:
-        customer.name ||
-        customer.company_name ||
-        customer.label ||
-        `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
-        customer.id,
-      label:
-        customer.name ||
-        customer.company_name ||
-        customer.label ||
-        `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
-        customer.id,
-      email: customer.email || customer.emails?.[0] || "",
-    }));
-
+    const customers = await fetchAllPennylaneCustomers();
     res.json(customers);
   } catch (error) {
-    console.error("GET /api/pennylane/customers ERROR:", error);
-
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
+    errorResponse(res, error, "GET /api/pennylane/customers ERROR:");
   }
 });
+
 app.get("/api/pennylane/products", requireAdmin, (_req, res) => {
   res.json([]);
 });
@@ -330,82 +335,28 @@ app.get("/api/pennylane/invoices", requireAdmin, (_req, res) => {
 
 app.post("/api/pennylane/connect", requireAdmin, (_req, res) => {
   res.json({
-    connected: true,
+    connected: Boolean(PENNYLANE_API_KEY),
     lastSyncAt: new Date().toLocaleString("fr-FR"),
   });
 });
 
 app.post("/api/pennylane/disconnect", requireAdmin, (_req, res) => {
-  res.json({ connected: false, lastSyncAt: "" });
+  res.json({
+    connected: false,
+    lastSyncAt: "",
+  });
 });
 
 app.post("/api/pennylane/sync/customers", requireAdmin, async (_req, res) => {
   try {
-    if (!PENNYLANE_API_KEY) {
-      return res.status(500).json({
-        error: "PENNYLANE_API_KEY manquante",
-      });
-    }
-
-    let allCustomers = [];
-    let cursor = null;
-    let page = 0;
-
-    do {
-      page += 1;
-
-      const url = new URL("https://app.pennylane.com/api/external/v2/customers");
-      url.searchParams.set("limit", "100");
-
-      if (cursor) {
-        url.searchParams.set("cursor", cursor);
-      }
-
-      const response = await fetch(url.toString(), {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${PENNYLANE_API_KEY}`,
-          Accept: "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-
-        return res.status(response.status).json({
-          error: "Erreur API Pennylane",
-          detail: text,
-        });
-      }
-
-      const data = await response.json();
-      const items = data.items || data.customers || [];
-
-      allCustomers = [...allCustomers, ...items];
-
-      cursor = data.next_cursor || data.nextCursor || null;
-
-      if (!data.has_more && !data.hasMore) {
-        cursor = null;
-      }
-    } while (cursor && page < 20);
+    const customers = await fetchAllPennylaneCustomers();
 
     let syncedCount = 0;
 
-    for (const customer of allCustomers) {
-      const name =
-        customer.name ||
-        customer.company_name ||
-        customer.label ||
-        `${customer.first_name || ""} ${customer.last_name || ""}`.trim();
-
-      if (!customer.id || !name) {
+    for (const customer of customers) {
+      if (!customer.id || !customer.name) {
         continue;
       }
-
-      const email = customer.email || customer.emails?.[0] || null;
-      const phone = customer.phone || customer.phone_number || null;
-      const address = customer.address || customer.billing_address || null;
 
       await pool.query(
         `
@@ -427,12 +378,12 @@ app.post("/api/pennylane/sync/customers", requireAdmin, async (_req, res) => {
           commentaire = excluded.commentaire
         `,
         [
-          name,
-          typeof address === "string" ? address : null,
-          phone,
-          email,
+          customer.name,
+          customer.address || null,
+          customer.phone || null,
+          customer.email || null,
           "Synchronisé depuis Pennylane",
-          String(customer.id),
+          customer.id,
         ]
       );
 
@@ -445,16 +396,10 @@ app.post("/api/pennylane/sync/customers", requireAdmin, async (_req, res) => {
       lastSyncAt: new Date().toLocaleString("fr-FR"),
     });
   } catch (error) {
-    console.error("POST /api/pennylane/sync/customers ERROR:", error);
-
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
+    errorResponse(res, error, "POST /api/pennylane/sync/customers ERROR:");
   }
 });
+
 app.post("/api/clients", requireAdmin, async (req, res) => {
   try {
     const { nom, adresse, telephone, email, commentaire } = req.body || {};
@@ -517,6 +462,7 @@ app.post("/api/machines", requireAdmin, async (req, res) => {
 
     if (!marque || !modele || !numeroSerie) {
       await client.query("rollback");
+
       return res.status(400).json({
         error: "marque, modele and numeroSerie are required",
         message: "La marque, le modèle et le numéro de série sont obligatoires.",
@@ -541,6 +487,7 @@ app.post("/api/machines", requireAdmin, async (req, res) => {
     if (lastCodeResult.rows.length > 0) {
       const lastCode = lastCodeResult.rows[0].code;
       const lastNumber = Number(lastCode.split("-").pop());
+
       if (!Number.isNaN(lastNumber)) {
         nextNumber = lastNumber + 1;
       }
@@ -599,8 +546,8 @@ app.post("/api/machines", requireAdmin, async (req, res) => {
         numeroSerie.trim(),
         fournisseur || null,
         sqlDateAchat,
-        factureAchat || null,
         prixAchat !== undefined && prixAchat !== "" ? Number(prixAchat) : null,
+        factureAchat || null,
         lieu || null,
         commentaire || null,
         pennylaneProductId || null,
@@ -651,6 +598,7 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
 
     if (!current) {
       await client.query("rollback");
+
       return res.status(404).json({
         error: "Machine not found",
         message: "Machine introuvable.",
