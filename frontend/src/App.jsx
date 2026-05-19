@@ -295,10 +295,6 @@ function handleLogout() {
   const [actionComment, setActionComment] = useState("");
   const [actionPennylaneCustomerId, setActionPennylaneCustomerId] = useState("");
 
-  const [machineFormPennylaneProductId, setMachineFormPennylaneProductId] = useState("");
-  const [machineFormPennylanePurchaseInvoiceId, setMachineFormPennylanePurchaseInvoiceId] = useState("");
-  const [machineFormPennylaneSalesInvoiceId, setMachineFormPennylaneSalesInvoiceId] = useState("");
-
   async function loadAllData() {
     try {
       setErrorMessage("");
@@ -495,12 +491,7 @@ function handleLogout() {
 
       const createdMachine = await apiFetch("/machines", {
         method: "POST",
-        body: JSON.stringify({
-          ...machineForm,
-          pennylaneProductId: machineFormPennylaneProductId || null,
-          pennylanePurchaseInvoiceId: machineFormPennylanePurchaseInvoiceId || null,
-          pennylaneSalesInvoiceId: machineFormPennylaneSalesInvoiceId || null,
-        }),
+       body: JSON.stringify(machineForm),
       });
 
       const createdId = getMachineApiId(createdMachine);
@@ -743,27 +734,6 @@ if (!isAuthenticated) {
                         <Field label="Prix achat"><Input type="number" value={machineForm.prixAchat} onChange={(e) => setMachineForm({ ...machineForm, prixAchat: e.target.value })} /></Field>
                         <Field label="Facture achat"><Input value={machineForm.factureAchat} onChange={(e) => setMachineForm({ ...machineForm, factureAchat: e.target.value })} /></Field>
                         <Field label="Lieu"><Input value={machineForm.lieu} onChange={(e) => setMachineForm({ ...machineForm, lieu: e.target.value })} /></Field>
-
-                        <Field label="Produit Pennylane">
-                          <Select value={machineFormPennylaneProductId} onChange={setMachineFormPennylaneProductId}>
-                            <option value="">Aucun</option>
-                            {pennylaneProducts.map((p) => <option key={p.id} value={p.id}>{p.label || p.name || p.id}</option>)}
-                          </Select>
-                        </Field>
-
-                        <Field label="Facture achat Pennylane">
-                          <Select value={machineFormPennylanePurchaseInvoiceId} onChange={setMachineFormPennylanePurchaseInvoiceId}>
-                            <option value="">Aucune</option>
-                            {pennylaneInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.number || invoice.label || invoice.id}</option>)}
-                          </Select>
-                        </Field>
-
-                        <Field label="Facture vente Pennylane">
-                          <Select value={machineFormPennylaneSalesInvoiceId} onChange={setMachineFormPennylaneSalesInvoiceId}>
-                            <option value="">Aucune</option>
-                            {pennylaneInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.number || invoice.label || invoice.id}</option>)}
-                          </Select>
-                        </Field>
 
                         <Field label="Commentaire" className="md:col-span-2"><Textarea value={machineForm.commentaire} onChange={(e) => setMachineForm({ ...machineForm, commentaire: e.target.value })} /></Field>
 
