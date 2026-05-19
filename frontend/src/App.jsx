@@ -894,7 +894,11 @@ function MachineDetailPanel({
       <CardContent className="space-y-6">
         {activeTab === "fiche" ? (
           <div className="grid gap-4 md:grid-cols-2">
-            <Info label="Client" value={client?.nom || "Sans client"} icon={UserRound} />
+            <Info
+  label="Client Pennylane"
+  value={pennylaneCustomer?.name || pennylaneCustomer?.label || "Sans client"}
+  icon={UserRound}
+/>
             <Info label="Lieu" value={machine.lieu || "-"} icon={MapPin} />
             <Info label="N° série" value={machine.numeroSerie || "-"} icon={Boxes} />
             <Info label="Date achat" value={formatDate(machine.dateAchat)} icon={CalendarDays} />
