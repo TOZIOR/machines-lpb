@@ -511,9 +511,7 @@ function handleLogout() {
         commentaire: "",
       });
 
-      setMachineFormPennylaneProductId("");
-      setMachineFormPennylanePurchaseInvoiceId("");
-      setMachineFormPennylaneSalesInvoiceId("");
+      
       setShowMachineForm(false);
     } catch (error) {
       console.error(error);
@@ -1675,39 +1673,99 @@ function CheckboxField({ label, checked, onChange }) {
 
 
 function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
-  const [query, setQuery] = useState("");
+  const selectedCustomer = customers.find((customer) => String(customer.id) === String(value)) || null;
+  const [query, setQuery] = useState(selectedCustomer?.name || "");
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    const customer = customers.find((item) => String(item.id) === String(value));
+    setQuery(customer?.name || customer?.label || "");
+  }, [value, customers]);
 
   const filteredCustomers = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return customers
       .filter((customer) => {
-        const label = `${customer.name || ""} ${customer.label || ""} ${customer.email || ""}`.toLowerCase();
+        const label = [
+          customer.name,
+          customer.label,
+          customer.email,
+          customer.phone,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
         return !q || label.includes(q);
       })
-      .slice(0, 50);
+      .slice(0, 12);
   }, [customers, query]);
 
+  function selectCustomer(customer) {
+    onChange(String(customer.id));
+    setQuery(customer.name || customer.label || customer.id);
+    setIsOpen(false);
+  }
+
+  function clearCustomer() {
+    onChange("");
+    setQuery("");
+    setIsOpen(false);
+  }
+
   return (
-    <div className="space-y-2">
+    <div className="relative">
       <Input
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Rechercher un client Pennylane..."
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        placeholder="Tape le nom du client..."
       />
 
-      <Select value={value} onChange={onChange}>
-        <option value="">Aucun</option>
-        {filteredCustomers.map((customer) => (
-          <option key={customer.id} value={customer.id}>
-            {customer.name || customer.label || customer.id}
-          </option>
-        ))}
-      </Select>
+      {value ? (
+        <button
+          type="button"
+          onClick={clearCustomer}
+          className="mt-2 text-xs font-semibold text-[#5b351f] underline"
+        >
+          Retirer le client
+        </button>
+      ) : null}
+
+      {isOpen ? (
+        <div className="absolute z-50 mt-2 max-h-72 w-full overflow-auto rounded-2xl border border-[#d8c4ad] bg-white shadow-lg">
+          {filteredCustomers.length > 0 ? (
+            filteredCustomers.map((customer) => (
+              <button
+                key={customer.id}
+                type="button"
+                onMouseDown={() => selectCustomer(customer)}
+                className="block w-full border-b border-[#f0dfcd] px-4 py-3 text-left hover:bg-[#f7eddf]"
+              >
+                <div className="text-sm font-bold text-[#2d1b12]">
+                  {customer.name || customer.label || customer.id}
+                </div>
+                {customer.email ? (
+                  <div className="text-xs text-[#7a5f4b]">
+                    {customer.email}
+                  </div>
+                ) : null}
+              </button>
+            ))
+          ) : (
+            <div className="px-4 py-3 text-sm text-[#7a5f4b]">
+              Aucun client trouvé.
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
-
 function SideNav({ icon, label, active = false }) {
   return (
     <button
