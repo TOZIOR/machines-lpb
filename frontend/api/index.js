@@ -240,7 +240,7 @@ app.get("/api/pennylane/status", requireAdmin, (_req, res) => {
   res.json({ connected: false, lastSyncAt: "" });
 });
 
-app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {
+app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {
   try {
     if (!PENNYLANE_API_KEY) {
       return res.status(500).json({
@@ -248,32 +248,63 @@ app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {
       });
     }
 
-    const response = await fetch(
-      "https://app.pennylane.com/api/external/v2/customers",
-      {
+    let allCustomers = [];
+    let cursor = null;
+    let page = 0;
+
+    do {
+      page += 1;
+
+      const url = new URL("https://app.pennylane.com/api/external/v2/customers");
+      url.searchParams.set("limit", "100");
+
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
+
+      const response = await fetch(url.toString(), {
         method: "GET",
         headers: {
           Authorization: `Bearer ${PENNYLANE_API_KEY}`,
           Accept: "application/json",
         },
-      }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-
-      return res.status(response.status).json({
-        error: "Erreur API Pennylane",
-        detail: text,
       });
-    }
 
-    const data = await response.json();
+      if (!response.ok) {
+        const text = await response.text();
 
-    const customers = (data.items || data.customers || []).map((customer) => ({
+        return res.status(response.status).json({
+          error: "Erreur API Pennylane",
+          detail: text,
+        });
+      }
+
+      const data = await response.json();
+      const items = data.items || data.customers || [];
+
+      allCustomers = [...allCustomers, ...items];
+
+      cursor = data.next_cursor || data.nextCursor || null;
+
+      if (!data.has_more && !data.hasMore) {
+        cursor = null;
+      }
+    } while (cursor && page < 20);
+
+    const customers = allCustomers.map((customer) => ({
       id: customer.id,
-      name: customer.name,
-      label: customer.name,
+      name:
+        customer.name ||
+        customer.company_name ||
+        customer.label ||
+        `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
+        customer.id,
+      label:
+        customer.name ||
+        customer.company_name ||
+        customer.label ||
+        `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
+        customer.id,
       email: customer.email || customer.emails?.[0] || "",
     }));
 
@@ -308,13 +339,122 @@ app.post("/api/pennylane/disconnect", requireAdmin, (_req, res) => {
   res.json({ connected: false, lastSyncAt: "" });
 });
 
-app.post("/api/pennylane/sync/customers", requireAdmin, (_req, res) => {
-  res.json({
-    ok: true,
-    lastSyncAt: new Date().toLocaleString("fr-FR"),
-  });
-});
+app.post("/api/pennylane/sync/customers", requireAdmin, async (_req, res) => {
+  try {
+    if (!PENNYLANE_API_KEY) {
+      return res.status(500).json({
+        error: "PENNYLANE_API_KEY manquante",
+      });
+    }
 
+    let allCustomers = [];
+    let cursor = null;
+    let page = 0;
+
+    do {
+      page += 1;
+
+      const url = new URL("https://app.pennylane.com/api/external/v2/customers");
+      url.searchParams.set("limit", "100");
+
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
+
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${PENNYLANE_API_KEY}`,
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+
+        return res.status(response.status).json({
+          error: "Erreur API Pennylane",
+          detail: text,
+        });
+      }
+
+      const data = await response.json();
+      const items = data.items || data.customers || [];
+
+      allCustomers = [...allCustomers, ...items];
+
+      cursor = data.next_cursor || data.nextCursor || null;
+
+      if (!data.has_more && !data.hasMore) {
+        cursor = null;
+      }
+    } while (cursor && page < 20);
+
+    let syncedCount = 0;
+
+    for (const customer of allCustomers) {
+      const name =
+        customer.name ||
+        customer.company_name ||
+        customer.label ||
+        `${customer.first_name || ""} ${customer.last_name || ""}`.trim();
+
+      if (!customer.id || !name) {
+        continue;
+      }
+
+      const email = customer.email || customer.emails?.[0] || null;
+      const phone = customer.phone || customer.phone_number || null;
+      const address = customer.address || customer.billing_address || null;
+
+      await pool.query(
+        `
+        insert into clients (
+          nom,
+          adresse,
+          telephone,
+          email,
+          commentaire,
+          pennylane_customer_id
+        )
+        values ($1, $2, $3, $4, $5, $6)
+        on conflict (pennylane_customer_id)
+        do update set
+          nom = excluded.nom,
+          adresse = coalesce(excluded.adresse, clients.adresse),
+          telephone = coalesce(excluded.telephone, clients.telephone),
+          email = coalesce(excluded.email, clients.email),
+          commentaire = excluded.commentaire
+        `,
+        [
+          name,
+          typeof address === "string" ? address : null,
+          phone,
+          email,
+          "Synchronisé depuis Pennylane",
+          String(customer.id),
+        ]
+      );
+
+      syncedCount += 1;
+    }
+
+    res.json({
+      ok: true,
+      syncedCount,
+      lastSyncAt: new Date().toLocaleString("fr-FR"),
+    });
+  } catch (error) {
+    console.error("POST /api/pennylane/sync/customers ERROR:", error);
+
+    res.status(500).json({
+      error: error.message,
+      detail: error.detail || null,
+      hint: error.hint || null,
+      code: error.code || null,
+    });
+  }
+});
 app.post("/api/clients", requireAdmin, async (req, res) => {
   try {
     const { nom, adresse, telephone, email, commentaire } = req.body || {};
