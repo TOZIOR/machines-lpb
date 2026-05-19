@@ -581,27 +581,10 @@ if (!isAuthenticated) {
 
   return (
     <div className="min-h-screen bg-[#f4eadc] text-[#2d1b12]">
-      <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
-        <aside className="hidden border-r border-[#d8c4ad] bg-[#eadcc9] p-4 lg:block">
-          <div className="mb-8 flex items-center gap-3 rounded-3xl bg-[#fffaf3] p-4 shadow-sm">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#5b351f] text-2xl text-white">⚙️</div>
-            <div>
-              <div className="text-lg font-bold text-[#2d1b12]">LPB</div>
-              <div className="text-sm text-[#7a5f4b]">Parc machines</div>
-            </div>
-          </div>
+      <div className="min-h-screen">
+       
 
-          <nav className="space-y-3">
-            <SideNav active icon="🏠" label="Accueil" />
-            <SideNav icon="📦" label="Machines" />
-            <SideNav icon="👤" label="Clients" />
-            <SideNav icon="🔧" label="Maintenance" />
-            <SideNav icon="🔗" label="Pennylane" />
-            <SideNav icon="🧾" label="Historique" />
-          </nav>
-        </aside>
-
-        <main className="min-w-0">
+          <main className="w-full">
           <header className="bg-[#5b351f] px-5 py-6 text-white md:px-8">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
               <div>
