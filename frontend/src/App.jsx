@@ -32,7 +32,6 @@ const STATUSES = [
   "Hors service",
 ];
 
-
 async function apiFetch(path, options = {}) {
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -131,6 +130,32 @@ function formatAmount(value) {
     style: "currency",
     currency: "EUR",
   }).format(Number(value));
+}
+
+function fillGpsLocation(setLocation, setMessage) {
+  if (!navigator.geolocation) {
+    if (setMessage) setMessage("La géolocalisation n'est pas disponible sur cet appareil.");
+    return;
+  }
+
+  if (setMessage) setMessage("Recherche de la position GPS…");
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude.toFixed(5);
+      const lon = position.coords.longitude.toFixed(5);
+      setLocation(`GPS ${lat}, ${lon}`);
+      if (setMessage) setMessage("Position GPS ajoutée dans le lieu.");
+    },
+    () => {
+      if (setMessage) setMessage("Impossible de récupérer la position GPS.");
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 60000,
+    }
+  );
 }
 
 function statusVariant(status) {
@@ -847,7 +872,8 @@ if (!isAuthenticated) {
 function MachineDetailPanel({
   machine, pennylaneCustomer, pennylaneProduct, purchaseInvoice, salesInvoice,
   history, pennylaneCustomers, activeTab, setActiveTab,
-  actionStatus, setActionStatus, actionLocation, setActionLocation, actionComment, setActionComment, maintenanceStartDate, setMaintenanceStartDate,
+  actionStatus, setActionStatus, actionLocation, setActionLocation,
+  actionComment, setActionComment, maintenanceStartDate, setMaintenanceStartDate,
   maintenanceReason, setMaintenanceReason, maintenanceAction, setMaintenanceAction,
   maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate, actionPennylaneCustomerId,
   setActionPennylaneCustomerId, onApplyAction, labelSettings, setLabelSettings,
@@ -957,7 +983,19 @@ function MachineDetailPanel({
               </>
             ) : null}
             
-            <Field label="Lieu"><Input value={actionLocation} onChange={(e) => setActionLocation(e.target.value)} /></Field>
+            <Field label="Lieu">
+              <div className="space-y-2">
+                <Input value={actionLocation} onChange={(e) => setActionLocation(e.target.value)} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 rounded-2xl border-[#d8c4ad] bg-[#fffdf8] text-base text-[#5b351f] hover:bg-[#f0dfcd]"
+                  onClick={() => fillGpsLocation(setActionLocation)}
+                >
+                  📍 Utiliser ma position GPS
+                </Button>
+              </div>
+            </Field>
             <Field label="Client Pennylane">
   <PennylaneCustomerSearchSelect
     value={actionPennylaneCustomerId}
@@ -967,7 +1005,7 @@ function MachineDetailPanel({
 </Field>
             <Field label="Commentaire action" className="md:col-span-2"><Textarea value={actionComment} onChange={(e) => setActionComment(e.target.value)} /></Field>
             <div className="md:col-span-2">
-              <Button className="rounded-xl bg-[#5b351f] text-white hover:bg-[#3f2415]" onClick={onApplyAction}>
+              <Button className="h-12 rounded-2xl bg-[#5b351f] text-base text-white hover:bg-[#3f2415]" onClick={onApplyAction}>
                 <RefreshCw className="mr-2 h-4 w-4" /> Enregistrer la mise à jour
               </Button>
             </div>
@@ -992,7 +1030,6 @@ function MachinePublicPage({ machine, client, history, clients, errorMessage, on
   const [status, setStatus] = useState(machine?.statut || "En stock");
   const [clientId, setClientId] = useState(machine?.clientId || "");
   const [lieu, setLieu] = useState(machine?.lieu || "");
-  const [type, setType] = useState(machine?.typeMiseDisposition || "");
   const [commentaire, setCommentaire] = useState("");
   const [message, setMessage] = useState("");
 
@@ -1000,7 +1037,6 @@ function MachinePublicPage({ machine, client, history, clients, errorMessage, on
     setStatus(machine?.statut || "En stock");
     setClientId(machine?.clientId || "");
     setLieu(machine?.lieu || "");
-    setType(machine?.typeMiseDisposition || "");
   }, [machine]);
 
   if (!machine) {
@@ -1029,7 +1065,6 @@ function MachinePublicPage({ machine, client, history, clients, errorMessage, on
           statut: status,
           clientId: clientId || "",
           lieu,
-          typeMiseDisposition: type || "",
           commentaire: commentaire || machine.commentaire || "",
           action: "Mise à jour terrain QR",
         }),
@@ -1077,10 +1112,9 @@ function MachinePublicPage({ machine, client, history, clients, errorMessage, on
                 <Field label="Statut"><Select value={status} onChange={setStatus}>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</Select></Field>
                 <Field label="Client"><Select value={clientId} onChange={setClientId}><option value="">Sans client</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select></Field>
                 <Field label="Lieu"><Input value={lieu} onChange={(e) => setLieu(e.target.value)} /></Field>
-                <Field label="Type mise à disposition"><Select value={type} onChange={setType}><option value="">Aucun</option>{ASSIGNMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</Select></Field>
                 <Field label="Commentaire" className="md:col-span-2"><Textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} /></Field>
                 <div className="md:col-span-2">
-                  <Button className="rounded-xl bg-[#5b351f] text-white hover:bg-[#3f2415]" onClick={updateFromPublicPage}>Enregistrer</Button>
+                  <Button className="h-12 rounded-2xl bg-[#5b351f] text-base text-white hover:bg-[#3f2415]" onClick={updateFromPublicPage}>Enregistrer</Button>
                 </div>
               </div>
             </div>
@@ -1725,35 +1759,87 @@ function CheckboxField({ label, checked, onChange }) {
 
 
 function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
-  const [query, setQuery] = useState("");
+  const selectedCustomer = customers.find((customer) => String(customer.id) === String(value)) || null;
+  const [query, setQuery] = useState(selectedCustomer?.name || selectedCustomer?.label || "");
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    const customer = customers.find((item) => String(item.id) === String(value));
+    setQuery(customer?.name || customer?.label || "");
+  }, [value, customers]);
 
   const filteredCustomers = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return customers
       .filter((customer) => {
-        const label = `${customer.name || ""} ${customer.label || ""} ${customer.email || ""}`.toLowerCase();
+        const label = [customer.name, customer.label, customer.email, customer.phone]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
         return !q || label.includes(q);
       })
-      .slice(0, 50);
+      .slice(0, 12);
   }, [customers, query]);
 
+  function selectCustomer(customer) {
+    onChange(String(customer.id));
+    setQuery(customer.name || customer.label || customer.id);
+    setIsOpen(false);
+  }
+
+  function clearCustomer() {
+    onChange("");
+    setQuery("");
+    setIsOpen(false);
+  }
+
   return (
-    <div className="space-y-2">
+    <div className="relative">
       <Input
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Rechercher un client Pennylane..."
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        placeholder="Tape le nom du client..."
       />
 
-      <Select value={value} onChange={onChange}>
-        <option value="">Aucun</option>
-        {filteredCustomers.map((customer) => (
-          <option key={customer.id} value={customer.id}>
-            {customer.name || customer.label || customer.id}
-          </option>
-        ))}
-      </Select>
+      {value ? (
+        <button
+          type="button"
+          onClick={clearCustomer}
+          className="mt-2 text-xs font-semibold text-[#5b351f] underline"
+        >
+          Retirer le client
+        </button>
+      ) : null}
+
+      {isOpen ? (
+        <div className="absolute z-50 mt-2 max-h-72 w-full overflow-auto rounded-2xl border border-[#d8c4ad] bg-white shadow-lg">
+          {filteredCustomers.length > 0 ? (
+            filteredCustomers.map((customer) => (
+              <button
+                key={customer.id}
+                type="button"
+                onMouseDown={() => selectCustomer(customer)}
+                className="block w-full border-b border-[#f0dfcd] px-4 py-3 text-left hover:bg-[#f7eddf]"
+              >
+                <div className="text-sm font-bold text-[#2d1b12]">
+                  {customer.name || customer.label || customer.id}
+                </div>
+                {customer.email ? (
+                  <div className="text-xs text-[#7a5f4b]">{customer.email}</div>
+                ) : null}
+              </button>
+            ))
+          ) : (
+            <div className="px-4 py-3 text-sm text-[#7a5f4b]">Aucun client trouvé.</div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
