@@ -820,7 +820,7 @@ if (!isAuthenticated) {
                                 <div className="text-sm text-[#7a5f4b]">{machine.marque} {machine.modele}</div>
                                 <div className="mt-1 text-xs text-[#9a8571]">{client?.nom || "Sans client"}</div>
                               </div>
-                              <Badge variant={statusVariant(machine.statut)}>{machine.statut}</Badge>
+                              <Badge variant={statusVariant(actionStatus)}>{actionStatus}</Badge>
                             </div>
                           </button>
                         );
