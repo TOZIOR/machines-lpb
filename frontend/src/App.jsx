@@ -911,27 +911,7 @@ function MachineDetailPanel({
 </div>
           </div>
 
-          {activeTab !== "etiquette" && (
-  <div className="flex flex-wrap gap-2">
-    <Button
-      variant="outline"
-      className="rounded-xl"
-      onClick={() => downloadQRCode(publicUrl, code)}
-    >
-      <Download className="mr-2 h-4 w-4" />
-      Télécharger QR
-    </Button>
 
-    <Button
-      variant="outline"
-      className="rounded-xl"
-      onClick={() => printQRCode(machine)}
-    >
-      <Printer className="mr-2 h-4 w-4" />
-      Imprimer
-    </Button>
-  </div>
-)}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -1170,7 +1150,6 @@ function QrPanel({ machine }) {
 
       <div className="space-y-4">
         <Info label="URL publique" value={url} icon={Link2} />
-        <
       </div>
     </div>
   );
