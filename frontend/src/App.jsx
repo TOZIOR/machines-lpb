@@ -1170,14 +1170,27 @@ function QrPanel({ machine }) {
 
       <div className="space-y-4">
         <Info label="URL publique" value={url} icon={Link2} />
-        <div className="flex flex-wrap gap-2">
-          <Button className="rounded-xl bg-[#5b351f] text-white hover:bg-[#3f2415]" onClick={() => downloadQRCode(url, code)}>
-            <Download className="mr-2 h-4 w-4" /> Télécharger QR PNG
-          </Button>
-          <Button variant="outline" className="rounded-xl" onClick={() => printQRCode(machine)}>
-            <Printer className="mr-2 h-4 w-4" /> Imprimer QR
-          </Button>
-        </div>
+        <{activeTab === "qr" && (
+  <div className="flex flex-wrap gap-2">
+    <Button
+      variant="outline"
+      className="rounded-xl"
+      onClick={() => downloadQRCode(publicUrl, code)}
+    >
+      <Download className="mr-2 h-4 w-4" />
+      Télécharger QR
+    </Button>
+
+    <Button
+      variant="outline"
+      className="rounded-xl"
+      onClick={() => printQRCode(machine)}
+    >
+      <Printer className="mr-2 h-4 w-4" />
+      Imprimer
+    </Button>
+  </div>
+)}
       </div>
     </div>
   );
