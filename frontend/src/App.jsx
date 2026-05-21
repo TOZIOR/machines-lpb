@@ -898,7 +898,9 @@ function MachineDetailPanel({
           <div>
             <CardTitle className="text-2xl text-[#2d1b12]">{code}</CardTitle>
             <p className="text-[#7a5f4b]">{machine.marque} {machine.modele}</p>
-            <div className="mt-2"><Badge variant={statusVariant(machine.statut)}>{machine.statut}</Badge></div>
+<div className="mt-2">
+  <Badge variant={statusVariant(actionStatus)}>{actionStatus}</Badge>
+</div>
           </div>
 
           <div className="flex flex-wrap gap-2">
