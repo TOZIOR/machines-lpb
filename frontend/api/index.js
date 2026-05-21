@@ -1,9 +1,9 @@
-require("dotenv").config();
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import pg from "pg";
 
-const express = require("express");
-const cors = require("cors");
-const { Pool } = require("pg");
-
+const { Pool } = pg;
 const app = express();
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
@@ -761,4 +761,4 @@ await client.query(
   }
 });
 
-module.exports = app;
+export default app;
