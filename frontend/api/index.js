@@ -668,15 +668,6 @@ if ((current.lieu || "") !== (nextLieu || "")) {
 }
 
 if (
-  (current.type_mise_disposition || "") !==
-  (nextType || "")
-) {
-  changes.push(
-    `Type mise à disposition : ${current.type_mise_disposition || "-"} → ${nextType || "-"}`
-  );
-}
-
-if (
   (current.pennylane_customer_id || "") !==
   (nextPennylaneCustomerId || "")
 ) {
