@@ -1346,15 +1346,19 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
 }
 
 async function downloadMachineLabelPNG(machine, settings) {
-  const widthMm = clampNumber(settings.width, 100, 50, 150);
-  const heightMm = clampNumber(settings.height, 70, 30, 100);
+  const widthMm = clampNumber(settings.width, 85, 50, 150);
+  const heightMm = clampNumber(settings.height, 32, 25, 100);
   const scale = 12;
+
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
+
   const width = Math.round(widthMm * scale);
   const height = Math.round(heightMm * scale);
+
   const padding = Math.round(2 * scale);
-  const qrSize = Math.round(20 * scale));
+  const qrSize = Math.round(20 * scale);
+  const gap = Math.round(3 * scale);
 
   canvas.width = width;
   canvas.height = height;
@@ -1364,8 +1368,15 @@ async function downloadMachineLabelPNG(machine, settings) {
 
   if (settings.showBorder) {
     ctx.strokeStyle = "#000000";
-    ctx.lineWidth = Math.max(2, Math.round(0.35 * scale));
-    drawRoundedRect(ctx, Math.round(1.5 * scale), Math.round(1.5 * scale), width - Math.round(3 * scale), height - Math.round(3 * scale), Math.round(settings.borderRadius * scale));
+    ctx.lineWidth = Math.max(2, Math.round(0.3 * scale));
+    drawRoundedRect(
+      ctx,
+      Math.round(1.5 * scale),
+      Math.round(1.5 * scale),
+      width - Math.round(3 * scale),
+      height - Math.round(3 * scale),
+      Math.round(settings.borderRadius * scale)
+    );
     ctx.stroke();
   }
 
@@ -1373,10 +1384,11 @@ async function downloadMachineLabelPNG(machine, settings) {
     width: qrSize,
     margin: 1,
   });
+
   const qrImage = await loadImage(qrDataUrl);
 
-  const leftX = padding;
-  const qrY = padding;
+  const leftX = padding + Math.round(2 * scale);
+  const qrY = padding + Math.round(2 * scale);
 
   if (settings.showQr) {
     ctx.drawImage(qrImage, leftX, qrY, qrSize, qrSize);
@@ -1385,42 +1397,47 @@ async function downloadMachineLabelPNG(machine, settings) {
   if (settings.showMachineCode) {
     ctx.fillStyle = "#000000";
     ctx.textAlign = "center";
-    ctx.font = `bold ${Math.round(3 * scale)}px Arial`;
-ctx.fillText(getMachineCode(machine), leftX + qrSize / 2, qrY + qrSize + Math.round(4 * scale));
+    ctx.font = `bold ${Math.round(2.7 * scale)}px Arial`;
+    ctx.fillText(
+      getMachineCode(machine),
+      leftX + qrSize / 2,
+      qrY + qrSize + Math.round(3.2 * scale)
+    );
   }
 
-  const rightX = leftX + qrSize + Math.round(3 * scale);
-  const rightW = width - rightX - padding;
+  const rightX = leftX + qrSize + gap;
+  const rightW = width - rightX - padding - Math.round(2 * scale);
   let y = padding + Math.round(6 * scale);
 
   ctx.textAlign = "left";
   ctx.fillStyle = "#000000";
 
   if (settings.showModel) {
-    ctx.font = `bold ${Math.round(4 * scale)}px Arial`;
+    ctx.font = `bold ${Math.round(3.6 * scale)}px Arial`;
     ctx.fillText(getMachineLabelTitle(machine).toUpperCase(), rightX, y, rightW);
-    y += Math.round(6 * scale);
+    y += Math.round(5 * scale);
   }
 
   ctx.strokeStyle = "#000000";
-  ctx.lineWidth = Math.max(1, Math.round(0.25 * scale));
+  ctx.lineWidth = Math.max(1, Math.round(0.2 * scale));
   ctx.beginPath();
   ctx.moveTo(rightX, y);
   ctx.lineTo(rightX + rightW, y);
   ctx.stroke();
 
-  y += Math.round(4 * scale);
+  y += Math.round(3.5 * scale);
 
   if (settings.showCompany) {
-    ctx.font = `bold ${Math.round(2.6 * scale)}px Arial`;
-y += Math.round(4 * scale);
+    ctx.font = `bold ${Math.round(2.2 * scale)}px Arial`;
+    ctx.fillText(settings.company1 || "", rightX, y, rightW);
+    y += Math.round(3 * scale);
 
-ctx.font = `${Math.round(2.2 * scale)}px Arial`;
-ctx.fillText(settings.company2 || "", rightX, y, rightW);
-y += Math.round(3 * scale);
-ctx.fillText(settings.company3 || "", rightX, y, rightW);
-y += Math.round(3 * scale);
-ctx.fillText(settings.company4 || "", rightX, y, rightW);
+    ctx.font = `${Math.round(1.9 * scale)}px Arial`;
+    ctx.fillText(settings.company2 || "", rightX, y, rightW);
+    y += Math.round(2.6 * scale);
+    ctx.fillText(settings.company3 || "", rightX, y, rightW);
+    y += Math.round(2.6 * scale);
+    ctx.fillText(settings.company4 || "", rightX, y, rightW);
   }
 
   const link = document.createElement("a");
