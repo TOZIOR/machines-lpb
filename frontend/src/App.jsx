@@ -1353,8 +1353,8 @@ async function downloadMachineLabelPNG(machine, settings) {
   const ctx = canvas.getContext("2d");
   const width = Math.round(widthMm * scale);
   const height = Math.round(heightMm * scale);
-  const padding = Math.round(7 * scale);
-  const qrSize = Math.round(Math.min(height * 0.58, width * 0.34));
+  const padding = Math.round(2 * scale);
+  const qrSize = Math.round(20 * scale));
 
   canvas.width = width;
   canvas.height = height;
@@ -1376,7 +1376,7 @@ async function downloadMachineLabelPNG(machine, settings) {
   const qrImage = await loadImage(qrDataUrl);
 
   const leftX = padding;
-  const qrY = padding + Math.round(2 * scale);
+  const qrY = padding;
 
   if (settings.showQr) {
     ctx.drawImage(qrImage, leftX, qrY, qrSize, qrSize);
@@ -1385,21 +1385,21 @@ async function downloadMachineLabelPNG(machine, settings) {
   if (settings.showMachineCode) {
     ctx.fillStyle = "#000000";
     ctx.textAlign = "center";
-    ctx.font = `bold ${Math.round(5.8 * scale)}px Arial`;
-    ctx.fillText(getMachineCode(machine), leftX + qrSize / 2, qrY + qrSize + Math.round(10 * scale));
+    ctx.font = `bold ${Math.round(3 * scale)}px Arial`;
+ctx.fillText(getMachineCode(machine), leftX + qrSize / 2, qrY + qrSize + Math.round(4 * scale));
   }
 
-  const rightX = leftX + qrSize + Math.round(10 * scale);
+  const rightX = leftX + qrSize + Math.round(3 * scale);
   const rightW = width - rightX - padding;
-  let y = padding + Math.round(13 * scale);
+  let y = padding + Math.round(6 * scale);
 
   ctx.textAlign = "left";
   ctx.fillStyle = "#000000";
 
   if (settings.showModel) {
-    ctx.font = `bold ${Math.round(7.2 * scale)}px Arial`;
+    ctx.font = `bold ${Math.round(4 * scale)}px Arial`;
     ctx.fillText(getMachineLabelTitle(machine).toUpperCase(), rightX, y, rightW);
-    y += Math.round(14 * scale);
+    y += Math.round(6 * scale);
   }
 
   ctx.strokeStyle = "#000000";
@@ -1409,19 +1409,18 @@ async function downloadMachineLabelPNG(machine, settings) {
   ctx.lineTo(rightX + rightW, y);
   ctx.stroke();
 
-  y += Math.round(9 * scale);
+  y += Math.round(4 * scale);
 
   if (settings.showCompany) {
-    ctx.font = `bold ${Math.round(4.8 * scale)}px Arial`;
-    ctx.fillText(settings.company1 || "", rightX, y, rightW);
-    y += Math.round(6.4 * scale);
+    ctx.font = `bold ${Math.round(2.6 * scale)}px Arial`;
+y += Math.round(4 * scale);
 
-    ctx.font = `${Math.round(4.3 * scale)}px Arial`;
-    ctx.fillText(settings.company2 || "", rightX, y, rightW);
-    y += Math.round(5.8 * scale);
-    ctx.fillText(settings.company3 || "", rightX, y, rightW);
-    y += Math.round(5.8 * scale);
-    ctx.fillText(settings.company4 || "", rightX, y, rightW);
+ctx.font = `${Math.round(2.2 * scale)}px Arial`;
+ctx.fillText(settings.company2 || "", rightX, y, rightW);
+y += Math.round(3 * scale);
+ctx.fillText(settings.company3 || "", rightX, y, rightW);
+y += Math.round(3 * scale);
+ctx.fillText(settings.company4 || "", rightX, y, rightW);
   }
 
   const link = document.createElement("a");
