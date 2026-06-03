@@ -647,7 +647,6 @@ const updatedResult = await client.query(
     nextStatut,
     nextClientId,
     nextLieu,
-    nextType,
     nextCommentaire,
     nextPennylaneCustomerId,
     nextMaintenanceStartDate,
