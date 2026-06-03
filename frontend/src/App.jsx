@@ -1469,30 +1469,30 @@ async function printMachineLabel(machine, settings) {
           .label {
             width: ${width}mm;
             height: ${height}mm;
-            padding: 7mm;
+            padding: 2mm;
             display: flex;
             align-items: center;
-            gap: 10mm;
+            gap: 3mm;
             border: ${settings.showBorder ? "0.35mm solid #000" : "none"};
             border-radius: ${radius}mm;
             overflow: hidden;
           }
 
           .left {
-            width: 34mm;
+            width: 22mm;
             text-align: center;
-            flex: 0 0 34mm;
+            flex: 0 0 22mm;
           }
 
           .qr {
-            width: 34mm;
-            height: 34mm;
+            width: 20mm;
+            height: 20mm;
             display: ${settings.showQr ? "block" : "none"};
           }
 
           .code {
-            margin-top: 5mm;
-            font-size: 6mm;
+            margin-top: 1mm;
+            font-size: 3mm;
             font-weight: 800;
             display: ${settings.showMachineCode ? "block" : "none"};
           }
@@ -1503,16 +1503,16 @@ async function printMachineLabel(machine, settings) {
           }
 
           .model {
-            font-size: 7mm;
+            font-size: 4mm;
             font-weight: 900;
             line-height: 1.1;
-            margin-bottom: 8mm;
+            margin-bottom: 2mm;
             display: ${settings.showModel ? "block" : "none"};
           }
 
           .rule {
-            border-top: 0.3mm solid #000;
-            margin-bottom: 6mm;
+            border-top: 0.25mm solid #000;
+            margin-bottom: 2mm;
           }
 
           .company {
@@ -1520,14 +1520,14 @@ async function printMachineLabel(machine, settings) {
           }
 
           .company-name {
-            font-size: 4.8mm;
+            font-size: 2.6mm;
             font-weight: 900;
-            margin-bottom: 2mm;
+            margin-bottom: 1mm;
           }
 
           .company-line {
-            font-size: 4.3mm;
-            line-height: 1.3;
+            font-size: 2.2mm;
+            line-height: 1.15;
           }
         </style>
       </head>
@@ -1696,12 +1696,12 @@ function QrLabelEditor({ machine, settings, setSettings }) {
                 borderRadius: `${settings.borderRadius}mm`,
               }}
             >
-              <div className="flex h-full items-center gap-[10mm]">
-                <div className="w-[34mm] shrink-0 text-center">
-                  {settings.showQr ? <QRCodeSVG value={url} size={128} /> : null}
+              <div className="flex h-full items-center gap-[3mm]">
+                <div className="w-[22mm] shrink-0 text-center">
+                  {settings.showQr ? <QRCodeSVG value={url} size={80} /> : null}
 
                   {settings.showMachineCode ? (
-                    <div className="mt-[5mm] text-[6mm] font-extrabold leading-none text-black">
+                    <div className="mt-[1mm] text-[3mm] font-extrabold leading-none text-black">
                       {code}
                     </div>
                   ) : null}
@@ -1709,7 +1709,7 @@ function QrLabelEditor({ machine, settings, setSettings }) {
 
                 <div className="min-w-0 flex-1 text-black">
                   {settings.showModel ? (
-                    <div className="mb-[8mm] text-[7mm] font-black leading-tight">
+                    <div className="mb-[2mm] text-[4mm] font-black leading-tight">
                       {model}
                     </div>
                   ) : null}
@@ -1718,12 +1718,12 @@ function QrLabelEditor({ machine, settings, setSettings }) {
 
                   {settings.showCompany ? (
                     <div>
-                      <div className="mb-[2mm] text-[4.8mm] font-black leading-tight">
+                      <div className="mb-[1mm] text-[2.6mm] font-black leading-tight">
                         {settings.company1}
                       </div>
-                      <div className="text-[4.3mm] leading-tight">{settings.company2}</div>
-                      <div className="text-[4.3mm] leading-tight">{settings.company3}</div>
-                      <div className="text-[4.3mm] leading-tight">{settings.company4}</div>
+                      <div className="text-[2.2mm] leading-tight">{settings.company2}</div>
+                      <div className="text-[2.2mm] leading-tight">{settings.company3}</div>
+                      <div className="text-[2.2mm] leading-tight">{settings.company4}</div>
                     </div>
                   ) : null}
                 </div>
