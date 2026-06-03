@@ -297,8 +297,8 @@ function handleLogout() {
     }
 
     return {
-      width: 100,
-      height: 70,
+      width: 85,
+      height: 32,
       borderRadius: 6,
       company1: "SAS LPB TORREFACTION",
       company2: "7 D Boulevard Eiffel",
