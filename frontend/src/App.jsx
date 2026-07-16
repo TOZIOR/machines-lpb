@@ -415,9 +415,16 @@ function handleLogout() {
   );
 
   const selectedPennylaneCustomer = useMemo(
-    () => pennylaneCustomers.find((c) => c.id === selectedMachine?.pennylaneCustomerId) || null,
-    [pennylaneCustomers, selectedMachine]
-  );
+  () =>
+    pennylaneCustomers.find(
+      (customer) =>
+        String(customer.id) ===
+        String(
+          selectedMachine?.pennylaneCustomerId || "",
+        ),
+    ) || null,
+  [pennylaneCustomers, selectedMachine],
+);
 
   const selectedPennylaneProduct = useMemo(
     () => pennylaneProducts.find((p) => p.id === selectedMachine?.pennylaneProductId) || null,
@@ -549,37 +556,97 @@ function handleLogout() {
     }
   }
 
-  async function applyAction() {
-    if (!selectedMachine) return;
+async function applyAction() {
+  if (!selectedMachine) return;
 
-    try {
-      setErrorMessage("");
-      const apiId = getMachineApiId(selectedMachine);
+  try {
+    setErrorMessage("");
 
-      const updatedMachine = await apiFetch(`/machines/${apiId}`, {
+    const clientRequiredStatuses = [
+      "En prêt",
+      "En location",
+      "Vendue",
+    ];
+
+    const clientIsRequired =
+      clientRequiredStatuses.includes(actionStatus);
+
+    if (
+      clientIsRequired &&
+      !actionPennylaneCustomerId
+    ) {
+      setErrorMessage(
+        `Un client doit être sélectionné lorsque le statut est « ${actionStatus} ».`,
+      );
+      return;
+    }
+
+    const matchingLocalClient = clients.find(
+      (client) =>
+        String(client.pennylaneCustomerId || "") ===
+        String(actionPennylaneCustomerId || ""),
+    );
+
+    const resolvedClientId =
+      matchingLocalClient?.id ?? null;
+
+    const apiId = getMachineApiId(selectedMachine);
+
+    const updatedMachine = await apiFetch(
+      `/machines/${apiId}`,
+      {
         method: "PATCH",
         body: JSON.stringify({
           statut: actionStatus,
-          clientId: actionClientId || "",
+          clientId: resolvedClientId,
+          pennylaneCustomerId:
+            actionPennylaneCustomerId || null,
           lieu: actionLocation || "",
-          commentaire: actionComment || selectedMachine.commentaire || "",
-          pennylaneCustomerId: actionPennylaneCustomerId || "",
-          maintenanceStartDate,
-          maintenanceReason,
-          maintenanceAction,
-          maintenanceExpectedReturnDate,
+          commentaire:
+            actionComment ||
+            selectedMachine.commentaire ||
+            "",
+          maintenanceStartDate:
+            maintenanceStartDate || null,
+          maintenanceReason:
+            maintenanceReason || null,
+          maintenanceAction:
+            maintenanceAction || null,
+          maintenanceExpectedReturnDate:
+            maintenanceExpectedReturnDate || null,
           action: "Mise à jour",
         }),
-      });
+      },
+    );
 
-      setMachines((prev) => prev.map((m) => (getMachineApiId(m) === apiId ? updatedMachine : m)));
-      setMovements(await apiFetch(`/machines/${apiId}/movements`));
-      setActionComment("");
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error.message);
-    }
+    setMachines((previousMachines) =>
+      previousMachines.map((machine) =>
+        getMachineApiId(machine) === apiId
+          ? updatedMachine
+          : machine,
+      ),
+    );
+
+    setMovements(
+      await apiFetch(
+        `/machines/${apiId}/movements`,
+      ),
+    );
+
+    setActionClientId(
+      updatedMachine.clientId || "",
+    );
+
+    setActionPennylaneCustomerId(
+      updatedMachine.pennylaneCustomerId || "",
+    );
+
+    setActionComment("");
+  } catch (error) {
+    console.error(error);
+    setErrorMessage(error.message);
   }
+}
 
   async function refreshMachine(machineCode) {
     const [machineData, historyData, clientsData] = await Promise.all([

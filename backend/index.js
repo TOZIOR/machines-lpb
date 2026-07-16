@@ -2,11 +2,15 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
-
+const { createCrmRouter } = require("./crm-routes");
+const {
+  validateMachineAssignment,
+} = require("./machine-rules");
 const app = express();
 const PORT = process.env.PORT || 3001;
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "change-me";
+const CRM_API_KEY = process.env.CRM_API_KEY || "change-me";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -15,6 +19,13 @@ const pool = new Pool({
 
 app.use(cors());
 app.use(express.json());
+app.use(
+  "/api/integrations/crm",
+  createCrmRouter({
+    pool,
+    apiKey: CRM_API_KEY,
+  }),
+);
 
 function requireAdmin(req, res, next) {
   const apiKey = req.header("x-api-key");
@@ -393,128 +404,229 @@ app.post("/api/machines", requireAdmin, async (req, res) => {
   }
 });
 
-app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
-  const client = await pool.connect();
+app.patch(
+  "/api/machines/:id",
+  requireAdmin,
+  async (req, res) => {
+    const client = await pool.connect();
 
-  try {
-    await client.query("begin");
+    try {
+      await client.query("begin");
 
-    const currentResult = await client.query(
-      `
-      select *
-      from machines
-      where code = $1 or id::text = $1
-      limit 1
-      `,
-      [req.params.id]
-    );
+      const currentResult = await client.query(
+        `
+        select *
+        from machines
+        where code = $1 or id::text = $1
+        limit 1
+        `,
+        [req.params.id],
+      );
 
-    if (currentResult.rows.length === 0) {
+      if (currentResult.rows.length === 0) {
+        await client.query("rollback");
+
+        return res.status(404).json({
+          error: "Machine not found",
+        });
+      }
+
+      const current = currentResult.rows[0];
+      const body = req.body || {};
+
+      const nextStatut =
+        body.statut ?? current.statut;
+
+      const nextClientId =
+        body.clientId !== undefined
+          ? body.clientId
+          : current.client_id;
+
+      const nextPennylaneCustomerId =
+        body.pennylaneCustomerId !== undefined
+          ? body.pennylaneCustomerId
+          : current.pennylane_customer_id;
+
+      const assignmentValidation =
+        validateMachineAssignment({
+          statut: nextStatut,
+          clientId: nextClientId,
+          pennylaneCustomerId:
+            nextPennylaneCustomerId,
+        });
+
+      if (!assignmentValidation.valid) {
+        await client.query("rollback");
+
+        return res.status(400).json({
+          error: assignmentValidation.error,
+          code: "INVALID_MACHINE_ASSIGNMENT",
+        });
+      }
+
+      const normalizedClientId =
+        assignmentValidation.clientId;
+
+      const normalizedPennylaneCustomerId =
+        assignmentValidation.pennylaneCustomerId;
+
+      const nextLieu =
+        body.lieu !== undefined
+          ? body.lieu
+          : current.lieu;
+
+      const nextType =
+        body.typeMiseDisposition !== undefined
+          ? body.typeMiseDisposition || null
+          : current.type_mise_disposition;
+
+      const nextCommentaire =
+        body.commentaire !== undefined
+          ? body.commentaire
+          : current.commentaire;
+
+      const updatedResult = await client.query(
+        `
+        update machines
+        set
+          statut = $1,
+          client_id = $2,
+          lieu = $3,
+          type_mise_disposition = $4,
+          commentaire = $5,
+          date_maj = current_date,
+
+          date_mise_disposition = case
+            when $1 in (
+              'En prêt',
+              'En location',
+              'Vendue'
+            )
+              and (
+                statut is distinct from $1
+                or date_mise_disposition is null
+              )
+              then current_date
+
+            when $1 in (
+              'En stock',
+              'Maintenance',
+              'Hors service'
+            )
+              then null
+
+            else date_mise_disposition
+          end,
+
+          pennylane_customer_id = $6
+
+        where id = $7
+
+        returning
+          id as "uuid",
+          code as "idCode",
+          code as "id",
+          code,
+          qr_code as "qrCode",
+          qr_code as "qrCodeUrl",
+          marque,
+          modele,
+          numero_serie as "numeroSerie",
+          fournisseur,
+          date_achat as "dateAchat",
+          facture_achat as "factureAchat",
+          prix_achat as "prixAchat",
+          statut,
+          client_id as "clientId",
+          lieu,
+          type_mise_disposition
+            as "typeMiseDisposition",
+          date_mise_disposition
+            as "dateMiseDisposition",
+          commentaire,
+          date_maj as "dateMaj",
+          pennylane_product_id
+            as "pennylaneProductId",
+          pennylane_customer_id
+            as "pennylaneCustomerId",
+          pennylane_purchase_invoice_id
+            as "pennylanePurchaseInvoiceId",
+          pennylane_sales_invoice_id
+            as "pennylaneSalesInvoiceId"
+        `,
+        [
+          nextStatut,
+          normalizedClientId,
+          nextLieu,
+          nextType,
+          nextCommentaire,
+          normalizedPennylaneCustomerId,
+          current.id,
+        ],
+      );
+
+      const clientChanged =
+        current.client_id !== normalizedClientId;
+
+      const statusChanged =
+        current.statut !== nextStatut;
+
+      const action =
+        body.action ||
+        (clientChanged && statusChanged
+          ? "Changement de statut et d’affectation"
+          : clientChanged
+            ? normalizedClientId
+              ? "Affectation à un client"
+              : "Retrait du client"
+            : statusChanged
+              ? "Changement de statut"
+              : "Mise à jour");
+
+      await client.query(
+        `
+        insert into machine_movements (
+          machine_id,
+          action,
+          ancien_statut,
+          nouveau_statut,
+          client_id,
+          commentaire
+        )
+        values ($1, $2, $3, $4, $5, $6)
+        `,
+        [
+          current.id,
+          action,
+          current.statut,
+          nextStatut,
+          normalizedClientId,
+          nextCommentaire || action,
+        ],
+      );
+
+      await client.query("commit");
+
+      return res.json(updatedResult.rows[0]);
+    } catch (error) {
       await client.query("rollback");
-      return res.status(404).json({ error: "Machine not found" });
+
+      console.error(
+        "PATCH /api/machines/:id ERROR:",
+        error,
+      );
+
+      return res.status(500).json({
+        error: error.message,
+        detail: error.detail || null,
+        hint: error.hint || null,
+        code: error.code || null,
+      });
+    } finally {
+      client.release();
     }
-
-    const current = currentResult.rows[0];
-    const body = req.body || {};
-
-    const nextStatut = body.statut ?? current.statut;
-    const nextClientId = body.clientId || null;
-    const nextLieu = body.lieu ?? current.lieu;
-    const nextType = body.typeMiseDisposition || null;
-    const nextCommentaire = body.commentaire ?? current.commentaire;
-    const nextPennylaneCustomerId = body.pennylaneCustomerId || null;
-
-    const updatedResult = await client.query(
-      `
-      update machines
-      set
-        statut = $1,
-        client_id = $2,
-        lieu = $3,
-        type_mise_disposition = $4,
-        commentaire = $5,
-        date_maj = current_date,
-        date_mise_disposition = case
-  when $1 in ('En prêt', 'En location', 'Vendue') then current_date
-  when $1 in ('En stock', 'Maintenance') then null
-  else date_mise_disposition
-end,
-        pennylane_customer_id = $6
-      where id = $7
-      returning
-        id as "uuid",
-        code as "idCode",
-        code as "id",
-        code,
-        qr_code as "qrCode",
-        qr_code as "qrCodeUrl",
-        marque,
-        modele,
-        numero_serie as "numeroSerie",
-        fournisseur,
-        date_achat as "dateAchat",
-        facture_achat as "factureAchat",
-        prix_achat as "prixAchat",
-        statut,
-        client_id as "clientId",
-        lieu,
-        type_mise_disposition as "typeMiseDisposition",
-        date_mise_disposition as "dateMiseDisposition",
-        commentaire,
-        date_maj as "dateMaj",
-        pennylane_product_id as "pennylaneProductId",
-        pennylane_customer_id as "pennylaneCustomerId",
-        pennylane_purchase_invoice_id as "pennylanePurchaseInvoiceId",
-        pennylane_sales_invoice_id as "pennylaneSalesInvoiceId"
-      `,
-      [
-        nextStatut,
-        nextClientId,
-        nextLieu,
-        nextType,
-        nextCommentaire,
-        nextPennylaneCustomerId,
-        current.id,
-      ]
-    );
-
-    await client.query(
-      `
-      insert into machine_movements (
-        machine_id,
-        action,
-        ancien_statut,
-        nouveau_statut,
-        client_id,
-        commentaire
-      )
-      values ($1, $2, $3, $4, $5, $6)
-      `,
-      [
-        current.id,
-        body.action || "Mise à jour",
-        current.statut,
-        nextStatut,
-        nextClientId,
-        nextCommentaire || "Mise à jour",
-      ]
-    );
-
-    await client.query("commit");
-    res.json(updatedResult.rows[0]);
-  } catch (error) {
-    await client.query("rollback");
-    console.error("PATCH /api/machines/:id ERROR:", error);
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
-    });
-  } finally {
-    client.release();
-  }
-});
+  },
+);
 
 app.listen(PORT, () => {
   console.log(`API lancée sur http://localhost:${PORT}`);
