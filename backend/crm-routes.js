@@ -7,7 +7,11 @@ function createCrmRouter({
   const router = express.Router();
 
   function requireCrmApiKey(req, res, next) {
-    const providedApiKey = req.header("x-api-key");
+    const authorization = req.header("authorization") || "";
+    const bearerApiKey = authorization.startsWith("Bearer ")
+      ? authorization.slice(7).trim()
+      : null;
+    const providedApiKey = req.header("x-api-key") || bearerApiKey;
 
     if (!apiKey || apiKey === "change-me") {
       console.error(
@@ -27,6 +31,14 @@ function createCrmRouter({
 
     next();
   }
+
+  router.get("/health", requireCrmApiKey, (_req, res) => {
+    res.json({
+      ok: true,
+      integration: "crm",
+      service: "machines-lpb",
+    });
+  });
 
   /*
    * Retourne le parc machines d'un client CRM à partir

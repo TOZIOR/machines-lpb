@@ -630,4 +630,5 @@ app.patch(
 
 app.listen(PORT, () => {
   console.log(`API lancée sur http://localhost:${PORT}`);
+  console.log("CRM integration mounted on /api/integrations/crm");
 });
