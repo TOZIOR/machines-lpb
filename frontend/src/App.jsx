@@ -576,11 +576,13 @@ function handleLogout() {
         return;
       }
 
-      const matchingLocalClient = clients.find(
-        (client) =>
-          String(client.pennylaneCustomerId || "") ===
-          String(actionPennylaneCustomerId || ""),
-      );
+      const matchingLocalClient = actionPennylaneCustomerId
+        ? clients.find(
+            (client) =>
+              String(client.pennylaneCustomerId || "") ===
+              String(actionPennylaneCustomerId),
+          )
+        : null;
 
       const resolvedClientId = matchingLocalClient?.id ?? null;
       const apiId = getMachineApiId(selectedMachine);

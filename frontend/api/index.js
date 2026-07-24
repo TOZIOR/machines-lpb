@@ -621,18 +621,22 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
     const nextCommentaire = body.commentaire ?? current.commentaire;
     const nextPennylaneCustomerId = body.pennylaneCustomerId || null;
 
-    let nextClientId = body.clientId || null;
+    const clientRequiredStatuses = ["En prêt", "En location", "Vendue"];
+    const statusKeepsClient = clientRequiredStatuses.includes(nextStatut);
 
-    if (nextPennylaneCustomerId) {
+    let nextClientId = statusKeepsClient ? body.clientId || null : null;
+    const resolvedPennylaneCustomerId = statusKeepsClient
+      ? nextPennylaneCustomerId
+      : null;
+
+    if (resolvedPennylaneCustomerId) {
       const matchingClientResult = await client.query(
         `select id from clients where pennylane_id = $1 limit 1`,
-        [String(nextPennylaneCustomerId)]
+        [String(resolvedPennylaneCustomerId)]
       );
 
       nextClientId = matchingClientResult.rows[0]?.id || null;
     }
-
-    const clientRequiredStatuses = ["En prêt", "En location", "Vendue"];
 
     if (clientRequiredStatuses.includes(nextStatut) && !nextClientId) {
       await client.query("rollback");
@@ -674,7 +678,7 @@ const updatedResult = await client.query(
     nextClientId,
     nextLieu,
     nextCommentaire,
-    nextPennylaneCustomerId,
+    resolvedPennylaneCustomerId,
     nextMaintenanceStartDate,
     nextMaintenanceReason,
     nextMaintenanceAction,
@@ -695,7 +699,7 @@ if ((current.lieu || "") !== (nextLieu || "")) {
 
 if (
   (current.pennylane_customer_id || "") !==
-  (nextPennylaneCustomerId || "")
+  (resolvedPennylaneCustomerId || "")
 ) {
   const oldClientResult = current.pennylane_customer_id
     ? await client.query(
@@ -704,10 +708,10 @@ if (
       )
     : { rows: [] };
 
-  const newClientResult = nextPennylaneCustomerId
+  const newClientResult = resolvedPennylaneCustomerId
     ? await client.query(
         `select name from clients where pennylane_id = $1 limit 1`,
-        [nextPennylaneCustomerId]
+        [resolvedPennylaneCustomerId]
       )
     : { rows: [] };
 
