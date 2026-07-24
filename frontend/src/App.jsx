@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Package, UserRound, Wrench, Search, Plus, ArrowRightLeft, MapPin,
   CalendarDays, Building2, RefreshCw, Link2, ShieldCheck, PlugZap,
-  Boxes, Wifi, WifiOff, Download, Printer,
+  Boxes, Wifi, WifiOff, Download, Printer, Trash2,
 } from "lucide-react";
 import QRCodeLib from "qrcode";
 import { QRCodeSVG } from "qrcode.react";
@@ -623,6 +623,44 @@ function handleLogout() {
     }
   }
 
+  async function deleteSelectedMachine() {
+    if (!selectedMachine) return;
+
+    const machineCode = getMachineCode(selectedMachine);
+    const confirmed = window.confirm(
+      `Supprimer définitivement la machine ${machineCode} et tout son historique ?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setErrorMessage("");
+      const apiId = getMachineApiId(selectedMachine);
+
+      await apiFetch(`/machines/${apiId}`, {
+        method: "DELETE",
+      });
+
+      const remainingMachines = machines.filter(
+        (machine) => getMachineApiId(machine) !== apiId,
+      );
+
+      setMachines(remainingMachines);
+      setMovements([]);
+
+      const nextMachine = remainingMachines[0] || null;
+      const nextMachineId = nextMachine ? getMachineApiId(nextMachine) : "";
+      setSelectedMachineId(nextMachineId);
+
+      if (nextMachineId) {
+        setMovements(await apiFetch(`/machines/${nextMachineId}/movements`));
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorMessage(error.message);
+    }
+  }
+
   async function refreshMachine(machineCode) {
     const [machineData, historyData, clientsData] = await Promise.all([
       publicApiFetch(`/public/machines/${machineCode}`),
@@ -910,6 +948,7 @@ if (!isAuthenticated) {
                 actionPennylaneCustomerId={actionPennylaneCustomerId}
                 setActionPennylaneCustomerId={setActionPennylaneCustomerId}
                 onApplyAction={applyAction}
+                onDeleteMachine={deleteSelectedMachine}
                 labelSettings={labelSettings}
                 setLabelSettings={setLabelSettings}
                 errorMessage={errorMessage}
@@ -929,7 +968,7 @@ function MachineDetailPanel({
   actionComment, setActionComment, maintenanceStartDate, setMaintenanceStartDate,
   maintenanceReason, setMaintenanceReason, maintenanceAction, setMaintenanceAction,
   maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate, actionPennylaneCustomerId,
-  setActionPennylaneCustomerId, onApplyAction, labelSettings, setLabelSettings,
+  setActionPennylaneCustomerId, onApplyAction, onDeleteMachine, labelSettings, setLabelSettings,
   errorMessage,
 }) {
   if (!machine) {
@@ -955,7 +994,15 @@ function MachineDetailPanel({
 </div>
           </div>
 
-
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-2xl border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+            onClick={onDeleteMachine}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Supprimer la machine
+          </Button>
         </div>
 
         <div className="flex flex-wrap gap-2">

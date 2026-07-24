@@ -617,10 +617,31 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
     const body = req.body || {};
 
     const nextStatut = body.statut ?? current.statut;
-    const nextClientId = body.clientId || null;
     const nextLieu = body.lieu ?? current.lieu;
     const nextCommentaire = body.commentaire ?? current.commentaire;
     const nextPennylaneCustomerId = body.pennylaneCustomerId || null;
+
+    let nextClientId = body.clientId || null;
+
+    if (nextPennylaneCustomerId) {
+      const matchingClientResult = await client.query(
+        `select id from clients where pennylane_id = $1 limit 1`,
+        [String(nextPennylaneCustomerId)]
+      );
+
+      nextClientId = matchingClientResult.rows[0]?.id || null;
+    }
+
+    const clientRequiredStatuses = ["En prêt", "En location", "Vendue"];
+
+    if (clientRequiredStatuses.includes(nextStatut) && !nextClientId) {
+      await client.query("rollback");
+
+      return res.status(400).json({
+        error: "client_required",
+        message: `Un client doit être sélectionné lorsque le statut est « ${nextStatut} ».`,
+      });
+    }
 const nextMaintenanceStartDate = toSqlDate(body.maintenanceStartDate) || current.maintenance_start_date;
 const nextMaintenanceReason = body.maintenanceReason ?? current.maintenance_reason;
 const nextMaintenanceAction = body.maintenanceAction ?? current.maintenance_action;
@@ -751,6 +772,46 @@ await client.query(
   } catch (error) {
     await client.query("rollback");
     errorResponse(res, error, "PATCH /api/machines/:id ERROR:");
+  } finally {
+    client.release();
+  }
+});
+
+
+app.delete("/api/machines/:id", requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    const machine = await findMachineByCodeOrUuid(req.params.id, client);
+
+    if (!machine) {
+      await client.query("rollback");
+
+      return res.status(404).json({
+        error: "Machine not found",
+        message: "Machine introuvable.",
+      });
+    }
+
+    await client.query(
+      `delete from machine_movements where machine_id = $1`,
+      [machine.id]
+    );
+
+    await client.query(`delete from machines where id = $1`, [machine.id]);
+
+    await client.query("commit");
+
+    return res.json({
+      ok: true,
+      deletedMachineId: machine.id,
+      deletedMachineCode: machine.code,
+    });
+  } catch (error) {
+    await client.query("rollback");
+    return errorResponse(res, error, "DELETE /api/machines/:id ERROR:");
   } finally {
     client.release();
   }
