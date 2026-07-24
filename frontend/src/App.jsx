@@ -39,6 +39,7 @@ async function apiFetch(path, options = {}) {
       headers: {
         "Content-Type": "application/json",
         "x-api-key": ADMIN_API_KEY,
+        "x-user-name": LOGIN_USERNAME,
         ...(options.headers || {}),
       },
     });
@@ -1265,29 +1266,124 @@ function QrMini({ machine }) {
   );
 }
 
+function parseHistoryObject(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+
+  return parsed.toLocaleString("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+function historyFieldLabel(key) {
+  const labels = {
+    statut: "Statut",
+    lieu: "Lieu",
+    client: "Client",
+    commentaire: "Commentaire",
+    maintenanceStartDate: "Début maintenance",
+    maintenanceReason: "Motif maintenance",
+    maintenanceAction: "Action maintenance",
+    maintenanceExpectedReturnDate: "Retour maintenance prévu",
+    marque: "Marque",
+    modele: "Modèle",
+    numeroSerie: "N° série",
+  };
+
+  return labels[key] || key;
+}
+
 function HistoryList({ history }) {
   if (!history.length) {
     return <p className="text-sm text-[#7a5f4b]">Aucun historique pour cette machine.</p>;
   }
 
   return (
-    <div className="space-y-3">
-      {history.map((item, index) => (
-        <div key={item.id || index} className="rounded-2xl border border-[#e4d4c2] bg-white p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-medium text-[#2d1b12]">{item.action || item.type || "Mouvement"}</div>
-            <div className="text-sm text-[#7a5f4b]">{formatDate(item.date || item.createdAt)}</div>
-          </div>
-          <div className="mt-2 text-sm text-[#7a5f4b]">
-            {item.commentaire || item.comment || item.description || "-"}
-          </div>
-          {item.ancienStatut || item.nouveauStatut ? (
-            <div className="mt-2 text-xs text-[#7a5f4b]">
-              {item.ancienStatut || "-"} → {item.nouveauStatut || "-"}
+    <div className="space-y-4">
+      {history.map((item, index) => {
+        const oldValues = parseHistoryObject(item.oldValues);
+        const newValues = parseHistoryObject(item.newValues);
+        const changedKeys = Array.from(
+          new Set([...Object.keys(oldValues), ...Object.keys(newValues)])
+        );
+
+        return (
+          <div
+            key={item.id || index}
+            className="rounded-3xl border border-[#e4d4c2] bg-white p-5 shadow-sm"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-bold text-[#2d1b12]">
+                    {item.action || item.eventType || "Mouvement"}
+                  </div>
+                  {item.eventType ? (
+                    <Badge variant="outline" className="border-[#d8c4ad] text-[#5b351f]">
+                      {item.eventType.replaceAll("_", " ")}
+                    </Badge>
+                  ) : null}
+                </div>
+
+                <div className="mt-1 text-xs text-[#7a5f4b]">
+                  Par {item.actorName || "Utilisateur LPB"}
+                </div>
+              </div>
+
+              <div className="text-sm font-medium text-[#7a5f4b]">
+                {formatDateTime(item.createdAt || item.date)}
+              </div>
             </div>
-          ) : null}
-        </div>
-      ))}
+
+            {changedKeys.length > 0 ? (
+              <div className="mt-4 grid gap-2">
+                {changedKeys.map((key) => (
+                  <div
+                    key={key}
+                    className="grid gap-1 rounded-2xl bg-[#fffaf3] px-4 py-3 text-sm md:grid-cols-[190px_1fr]"
+                  >
+                    <div className="font-semibold text-[#5b351f]">
+                      {historyFieldLabel(key)}
+                    </div>
+                    <div className="text-[#7a5f4b]">
+                      <span>{String(oldValues[key] ?? "-")}</span>
+                      <span className="mx-2 font-bold text-[#5b351f]">→</span>
+                      <span className="font-semibold text-[#2d1b12]">
+                        {String(newValues[key] ?? "-")}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {item.commentaire ? (
+              <div className="mt-4 rounded-2xl border border-[#eadcc9] bg-[#fffdf8] p-3 text-sm text-[#7a5f4b]">
+                {item.commentaire}
+              </div>
+            ) : null}
+
+            {!changedKeys.length && (item.ancienStatut || item.nouveauStatut) ? (
+              <div className="mt-3 text-xs text-[#7a5f4b]">
+                {item.ancienStatut || "-"} → {item.nouveauStatut || "-"}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

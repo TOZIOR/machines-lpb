@@ -103,6 +103,27 @@ async function findMachineByCodeOrUuid(value, db = pool) {
   return result.rows[0] || null;
 }
 
+function getActorName(req, fallback = "Utilisateur LPB") {
+  return String(
+    req.header("x-user-name") || req.body?.actorName || fallback
+  ).trim() || fallback;
+}
+
+function deriveMovementAction({ current, nextStatus, clientChanged, maintenanceChanged }) {
+  if (current.statut !== nextStatus) {
+    if (nextStatus === "En maintenance") return "Entrée en maintenance";
+    if (nextStatus === "En stock") return "Retour en stock";
+    if (["En prêt", "En location", "Vendue"].includes(nextStatus)) {
+      return "Affectation client";
+    }
+    return "Changement de statut";
+  }
+
+  if (clientChanged) return "Changement de client";
+  if (maintenanceChanged) return "Mise à jour maintenance";
+  return "Mise à jour machine";
+}
+
 function normalizePennylaneCustomer(customer) {
   const name =
     customer.name ||
@@ -242,14 +263,20 @@ app.get("/api/machines/:id/movements", requireAdmin, async (req, res) => {
         id,
         machine_id as "machineId",
         date,
+        created_at as "createdAt",
         action,
+        event_type as "eventType",
+        actor_name as "actorName",
         ancien_statut as "ancienStatut",
         nouveau_statut as "nouveauStatut",
         client_id as "clientId",
-        commentaire
+        commentaire,
+        old_values as "oldValues",
+        new_values as "newValues",
+        metadata
       from machine_movements
       where machine_id = $1
-      order by date desc
+      order by coalesce(created_at, date::timestamptz) desc
       `,
       [machine.id]
     );
@@ -300,14 +327,20 @@ app.get("/api/public/machines/:code/movements", async (req, res) => {
         id,
         machine_id as "machineId",
         date,
+        created_at as "createdAt",
         action,
+        event_type as "eventType",
+        actor_name as "actorName",
         ancien_statut as "ancienStatut",
         nouveau_statut as "nouveauStatut",
         client_id as "clientId",
-        commentaire
+        commentaire,
+        old_values as "oldValues",
+        new_values as "newValues",
+        metadata
       from machine_movements
       where machine_id = $1
-      order by date desc
+      order by coalesce(created_at, date::timestamptz) desc
       `,
       [machine.id]
     );
@@ -570,20 +603,36 @@ prixAchat !== undefined && prixAchat !== "" ? Number(prixAchat) : null,
       insert into machine_movements (
         machine_id,
         action,
+        event_type,
+        actor_name,
         ancien_statut,
         nouveau_statut,
         client_id,
-        commentaire
+        commentaire,
+        old_values,
+        new_values,
+        metadata
       )
-      values ($1, $2, $3, $4, $5, $6)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb)
       `,
       [
         result.rows[0].uuid,
         "Création",
+        "CREATION",
+        getActorName(req),
         "-",
         "En stock",
         null,
         "Entrée en stock après achat",
+        JSON.stringify({}),
+        JSON.stringify({
+          statut: "En stock",
+          lieu: lieu || null,
+          marque: marque.trim(),
+          modele: modele.trim(),
+          numeroSerie: numeroSerie.trim(),
+        }),
+        JSON.stringify({ source: "ADMIN" }),
       ]
     );
 
@@ -687,89 +736,138 @@ const updatedResult = await client.query(
   ]
 );
 
+    const oldClientResult = current.pennylane_customer_id
+      ? await client.query(
+          `select id, name from clients where pennylane_id = $1 limit 1`,
+          [current.pennylane_customer_id]
+        )
+      : { rows: [] };
+
+    const newClientResult = resolvedPennylaneCustomerId
+      ? await client.query(
+          `select id, name from clients where pennylane_id = $1 limit 1`,
+          [resolvedPennylaneCustomerId]
+        )
+      : { rows: [] };
+
+    const oldClientName = oldClientResult.rows[0]?.name || "Sans client";
+    const newClientName = newClientResult.rows[0]?.name || "Sans client";
+
+    const oldValues = {};
+    const newValues = {};
     const changes = [];
 
-if (current.statut !== nextStatut) {
-  changes.push(`Statut : ${current.statut} → ${nextStatut}`);
-}
+    function trackChange(key, label, oldValue, newValue) {
+      const normalizedOld = oldValue ?? null;
+      const normalizedNew = newValue ?? null;
 
-if ((current.lieu || "") !== (nextLieu || "")) {
-  changes.push(`Lieu : ${current.lieu || "-"} → ${nextLieu || "-"}`);
-}
+      if (String(normalizedOld ?? "") === String(normalizedNew ?? "")) return;
 
-if (
-  (current.pennylane_customer_id || "") !==
-  (resolvedPennylaneCustomerId || "")
-) {
-  const oldClientResult = current.pennylane_customer_id
-    ? await client.query(
-        `select name from clients where pennylane_id = $1 limit 1`,
-        [current.pennylane_customer_id]
+      oldValues[key] = normalizedOld;
+      newValues[key] = normalizedNew;
+      changes.push(`${label} : ${normalizedOld || "-"} → ${normalizedNew || "-"}`);
+    }
+
+    trackChange("statut", "Statut", current.statut, nextStatut);
+    trackChange("lieu", "Lieu", current.lieu, nextLieu);
+    trackChange(
+      "client",
+      "Client",
+      oldClientName,
+      newClientName
+    );
+    trackChange(
+      "commentaire",
+      "Commentaire",
+      current.commentaire,
+      nextCommentaire
+    );
+    trackChange(
+      "maintenanceStartDate",
+      "Début maintenance",
+      current.maintenance_start_date,
+      nextMaintenanceStartDate
+    );
+    trackChange(
+      "maintenanceReason",
+      "Motif maintenance",
+      current.maintenance_reason,
+      nextMaintenanceReason
+    );
+    trackChange(
+      "maintenanceAction",
+      "Action maintenance",
+      current.maintenance_action,
+      nextMaintenanceAction
+    );
+    trackChange(
+      "maintenanceExpectedReturnDate",
+      "Retour maintenance prévu",
+      current.maintenance_expected_return_date,
+      nextMaintenanceExpectedReturnDate
+    );
+
+    const clientChanged = oldClientName !== newClientName;
+    const maintenanceChanged = [
+      "maintenanceStartDate",
+      "maintenanceReason",
+      "maintenanceAction",
+      "maintenanceExpectedReturnDate",
+    ].some((key) => key in newValues);
+
+    const movementAction = body.action || deriveMovementAction({
+      current,
+      nextStatus: nextStatut,
+      clientChanged,
+      maintenanceChanged,
+    });
+
+    const eventType = movementAction
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+
+    const historyComment =
+      changes.length > 0
+        ? changes.join(" | ")
+        : body.commentaireAction || "Aucune modification détectée";
+
+    await client.query(
+      `
+      insert into machine_movements (
+        machine_id,
+        action,
+        event_type,
+        actor_name,
+        ancien_statut,
+        nouveau_statut,
+        client_id,
+        commentaire,
+        old_values,
+        new_values,
+        metadata
       )
-    : { rows: [] };
-
-  const newClientResult = resolvedPennylaneCustomerId
-    ? await client.query(
-        `select name from clients where pennylane_id = $1 limit 1`,
-        [resolvedPennylaneCustomerId]
-      )
-    : { rows: [] };
-
-  const oldClientName = oldClientResult.rows[0]?.name || "Sans client";
-  const newClientName = newClientResult.rows[0]?.name || "Sans client";
-
-  changes.push(`Client Pennylane : ${oldClientName} → ${newClientName}`);
-}
-if (
-  nextCommentaire &&
-  nextCommentaire !== current.commentaire
-) {
-  changes.push(`Commentaire : ${nextCommentaire}`);
-}
-
-if ((current.maintenance_reason || "") !== (nextMaintenanceReason || "")) {
-  changes.push(`Maintenance - motif : ${nextMaintenanceReason || "-"}`);
-}
-
-if ((current.maintenance_action || "") !== (nextMaintenanceAction || "")) {
-  changes.push(`Maintenance - action : ${nextMaintenanceAction || "-"}`);
-}
-
-if (
-  String(current.maintenance_expected_return_date || "") !==
-  String(nextMaintenanceExpectedReturnDate || "")
-) {
-  changes.push(
-    `Maintenance - retour prévu : ${nextMaintenanceExpectedReturnDate || "-"}`
-  );
-}
-
-const historyComment =
-  changes.length > 0
-    ? changes.join(" | ")
-    : "Aucune modification";
-
-await client.query(
-  `
-  insert into machine_movements (
-    machine_id,
-    action,
-    ancien_statut,
-    nouveau_statut,
-    client_id,
-    commentaire
-  )
-  values ($1, $2, $3, $4, $5, $6)
-  `,
-  [
-    current.id,
-    body.action || "Mise à jour",
-    current.statut,
-    nextStatut,
-    nextClientId,
-    historyComment,
-  ]
-);
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb)
+      `,
+      [
+        current.id,
+        movementAction,
+        eventType || "MISE_A_JOUR",
+        getActorName(req, body.action === "Mise à jour terrain QR" ? "Terrain QR" : "Utilisateur LPB"),
+        current.statut,
+        nextStatut,
+        nextClientId,
+        historyComment,
+        JSON.stringify(oldValues),
+        JSON.stringify(newValues),
+        JSON.stringify({
+          source: body.action === "Mise à jour terrain QR" ? "QR" : "ADMIN",
+          pennylaneCustomerId: resolvedPennylaneCustomerId,
+        }),
+      ]
+    );
 
     await client.query("commit");
     res.json(updatedResult.rows[0]);
