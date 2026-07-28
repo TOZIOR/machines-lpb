@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import {
   Package, UserRound, Wrench, Search, Plus, ArrowRightLeft, MapPin,
   CalendarDays, Building2, RefreshCw, Link2, ShieldCheck, PlugZap,
@@ -757,6 +757,66 @@ if (!isAuthenticated) {
             </div>
           </header>
 
+          <section className="border-b border-[#d8c4ad] bg-[#fffaf3] px-5 py-5 md:px-8">
+            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9a6b46]">Pilotage technique</p>
+                <h2 className="text-2xl font-extrabold text-[#2d1b12]">Cockpit SAV</h2>
+                <p className="mt-1 text-sm text-[#7a5f4b]">Vue opÃ©rationnelle du parc, des urgences et de la maintenance.</p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                <span className="rounded-full bg-[#5b351f] px-3 py-2 text-white">Parc</span>
+                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">Tickets SAV</span>
+                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">PrÃ©ventif</span>
+                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">Planning</span>
+                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">Techniciens</span>
+                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">TournÃ©es</span>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Card className="rounded-2xl border-[#d8c4ad] bg-white shadow-sm">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div><p className="text-xs text-[#7a5f4b]">Machines suivies</p><p className="text-2xl font-extrabold">{stats.total}</p></div>
+                  <Package className="h-6 w-6 text-[#9a6b46]" />
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl border-[#d8c4ad] bg-white shadow-sm">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div><p className="text-xs text-[#7a5f4b]">Urgences SAV</p><p className="text-2xl font-extrabold text-red-700">{stats.maintenance}</p></div>
+                  <Wrench className="h-6 w-6 text-red-700" />
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl border-[#d8c4ad] bg-white shadow-sm">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div><p className="text-xs text-[#7a5f4b]">Chez les clients</p><p className="text-2xl font-extrabold">{stats.enClient}</p></div>
+                  <MapPin className="h-6 w-6 text-[#9a6b46]" />
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl border-[#d8c4ad] bg-white shadow-sm">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div><p className="text-xs text-[#7a5f4b]">PrÃ©ventifs Ã  planifier</p><p className="text-2xl font-extrabold">0</p></div>
+                  <CalendarDays className="h-6 w-6 text-[#9a6b46]" />
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="mt-3 grid gap-3 lg:grid-cols-3">
+              <div className="rounded-2xl border border-[#d8c4ad] bg-white p-4 lg:col-span-2">
+                <div className="mb-3 flex items-center justify-between"><h3 className="font-bold">PrioritÃ©s opÃ©rationnelles</h3><Badge variant="outline">Aujourd'hui</Badge></div>
+                <div className="grid gap-2 text-sm sm:grid-cols-3">
+                  <div className="rounded-xl bg-red-50 p-3"><p className="font-bold text-red-800">Machines arrÃªtÃ©es</p><p className="mt-1 text-2xl font-extrabold text-red-700">{machines.filter((m) => m.statut === "Hors service").length}</p></div>
+                  <div className="rounded-xl bg-amber-50 p-3"><p className="font-bold text-amber-800">En maintenance</p><p className="mt-1 text-2xl font-extrabold text-amber-700">{stats.maintenance}</p></div>
+                  <div className="rounded-xl bg-emerald-50 p-3"><p className="font-bold text-emerald-800">Disponibles en stock</p><p className="mt-1 text-2xl font-extrabold text-emerald-700">{stats.stock}</p></div>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[#d8c4ad] bg-white p-4">
+                <div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-emerald-700" /><h3 className="font-bold">SantÃ© du parc</h3></div>
+                <p className="text-3xl font-extrabold text-[#2d1b12]">{stats.total ? Math.max(0, 100 - Math.round(((stats.maintenance + machines.filter((m) => m.statut === "Hors service").length) / stats.total) * 100)) : 100}%</p>
+                <p className="mt-1 text-sm text-[#7a5f4b]">Score calculÃ© selon les statuts actuels du parc.</p>
+              </div>
+            </div>
+          </section>
           <div className="space-y-6 p-5 md:p-8">
             {errorMessage ? (
               <Card className="rounded-3xl border-red-200 bg-red-50 shadow-sm">
