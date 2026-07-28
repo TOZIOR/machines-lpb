@@ -9,6 +9,7 @@ const app = express();
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "change-me";
 const PENNYLANE_API_KEY = process.env.PENNYLANE_API_KEY || "";
+const CRON_API_KEY = process.env.CRON_API_KEY || "";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -42,6 +43,30 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function requireCron(req, res, next) {
+  const apiKey = req.header("x-api-key");
+
+  if (!CRON_API_KEY || !apiKey || apiKey !== CRON_API_KEY) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      message: "Clé Cron absente ou incorrecte.",
+    });
+  }
+
+  next();
+}
+
+function normalizePreventiveLimit(value, defaultValue = 200) {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000) {
+    const error = new Error("La limite doit être un entier compris entre 1 et 1000.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return parsed;
+}
+
 function toSqlDate(value) {
   if (!value) return null;
 
@@ -59,6 +84,32 @@ function toSqlDate(value) {
   }
 
   return null;
+}
+
+function normalizePreventiveReferenceDate(value) {
+  if (!value) return null;
+  const parsed = toSqlDate(value);
+  if (!parsed) {
+    const error = new Error("referenceDate doit être une date valide au format YYYY-MM-DD.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return parsed;
+}
+
+async function generatePreventiveTickets(req, res) {
+  try {
+    const limit = normalizePreventiveLimit(req.body?.limit);
+    const referenceDate = normalizePreventiveReferenceDate(req.body?.referenceDate);
+    const result = await pool.query(
+      `select * from public.generate_due_sav_preventive_tickets($1::integer, $2::date)`,
+      [limit, referenceDate]
+    );
+    return res.json({ ok: true, limit, referenceDate, count: result.rows.length, results: result.rows });
+  } catch (error) {
+    if (error.statusCode === 400) return res.status(400).json({ error: error.message });
+    return errorResponse(res, error, "POST preventive generation ERROR:");
+  }
 }
 
 function machineSelectSql() {
@@ -918,5 +969,22 @@ app.delete("/api/machines/:id", requireAdmin, async (req, res) => {
     client.release();
   }
 });
+
+app.get("/api/preventive/queue", requireAdmin, async (req, res) => {
+  try {
+    const limit = normalizePreventiveLimit(req.query.limit);
+    const result = await pool.query(
+      `select * from public.sav_preventive_generation_queue order by due_date asc nulls last limit $1`,
+      [limit]
+    );
+    return res.json(result.rows);
+  } catch (error) {
+    if (error.statusCode === 400) return res.status(400).json({ error: error.message });
+    return errorResponse(res, error, "GET /api/preventive/queue ERROR:");
+  }
+});
+
+app.post("/api/preventive/generate", requireAdmin, generatePreventiveTickets);
+app.post("/api/cron/preventive/generate", requireCron, generatePreventiveTickets);
 
 export default app;
