@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Package, UserRound, Wrench, Search, Plus, ArrowRightLeft, MapPin,
   CalendarDays, Building2, RefreshCw, Link2, ShieldCheck, PlugZap,
@@ -267,6 +267,7 @@ function handleLogout() {
   const [statusFilter, setStatusFilter] = useState("Tous");
   const [clientFilter, setClientFilter] = useState("Tous");
   const [activeTab, setActiveTab] = useState("fiche");
+  const [workspaceSection, setWorkspaceSection] = useState("parc");
 
   const [showMachineForm, setShowMachineForm] = useState(false);
   
@@ -762,15 +763,30 @@ if (!isAuthenticated) {
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9a6b46]">Pilotage technique</p>
                 <h2 className="text-2xl font-extrabold text-[#2d1b12]">Cockpit SAV</h2>
-                <p className="mt-1 text-sm text-[#7a5f4b]">Vue opÃ©rationnelle du parc, des urgences et de la maintenance.</p>
+                <p className="mt-1 text-sm text-[#7a5f4b]">Vue opérationnelle du parc, des urgences et de la maintenance.</p>
               </div>
               <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                <span className="rounded-full bg-[#5b351f] px-3 py-2 text-white">Parc</span>
-                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">Tickets SAV</span>
-                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">PrÃ©ventif</span>
-                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">Planning</span>
-                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">Techniciens</span>
-                <span className="rounded-full border border-[#d8c4ad] bg-white px-3 py-2">TournÃ©es</span>
+                {[
+                  ["parc", "Parc"],
+                  ["tickets", "Tickets SAV"],
+                  ["preventif", "Préventif"],
+                  ["planning", "Planning"],
+                  ["techniciens", "Techniciens"],
+                  ["tournees", "Tournées"],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setWorkspaceSection(key)}
+                    className={
+                      workspaceSection === key
+                        ? "rounded-full bg-[#5b351f] px-3 py-2 text-white shadow-sm"
+                        : "rounded-full border border-[#d8c4ad] bg-white px-3 py-2 text-[#5b351f] transition hover:bg-[#f0dfcd]"
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -795,7 +811,7 @@ if (!isAuthenticated) {
               </Card>
               <Card className="rounded-2xl border-[#d8c4ad] bg-white shadow-sm">
                 <CardContent className="flex items-center justify-between p-4">
-                  <div><p className="text-xs text-[#7a5f4b]">PrÃ©ventifs Ã  planifier</p><p className="text-2xl font-extrabold">0</p></div>
+                  <div><p className="text-xs text-[#7a5f4b]">Préventifs Ã  planifier</p><p className="text-2xl font-extrabold">0</p></div>
                   <CalendarDays className="h-6 w-6 text-[#9a6b46]" />
                 </CardContent>
               </Card>
@@ -803,20 +819,21 @@ if (!isAuthenticated) {
 
             <div className="mt-3 grid gap-3 lg:grid-cols-3">
               <div className="rounded-2xl border border-[#d8c4ad] bg-white p-4 lg:col-span-2">
-                <div className="mb-3 flex items-center justify-between"><h3 className="font-bold">PrioritÃ©s opÃ©rationnelles</h3><Badge variant="outline">Aujourd'hui</Badge></div>
+                <div className="mb-3 flex items-center justify-between"><h3 className="font-bold">Priorités opérationnelles</h3><Badge variant="outline">Aujourd'hui</Badge></div>
                 <div className="grid gap-2 text-sm sm:grid-cols-3">
-                  <div className="rounded-xl bg-red-50 p-3"><p className="font-bold text-red-800">Machines arrÃªtÃ©es</p><p className="mt-1 text-2xl font-extrabold text-red-700">{machines.filter((m) => m.statut === "Hors service").length}</p></div>
+                  <div className="rounded-xl bg-red-50 p-3"><p className="font-bold text-red-800">Machines arrêtées</p><p className="mt-1 text-2xl font-extrabold text-red-700">{machines.filter((m) => m.statut === "Hors service").length}</p></div>
                   <div className="rounded-xl bg-amber-50 p-3"><p className="font-bold text-amber-800">En maintenance</p><p className="mt-1 text-2xl font-extrabold text-amber-700">{stats.maintenance}</p></div>
                   <div className="rounded-xl bg-emerald-50 p-3"><p className="font-bold text-emerald-800">Disponibles en stock</p><p className="mt-1 text-2xl font-extrabold text-emerald-700">{stats.stock}</p></div>
                 </div>
               </div>
               <div className="rounded-2xl border border-[#d8c4ad] bg-white p-4">
-                <div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-emerald-700" /><h3 className="font-bold">SantÃ© du parc</h3></div>
+                <div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-emerald-700" /><h3 className="font-bold">Santé du parc</h3></div>
                 <p className="text-3xl font-extrabold text-[#2d1b12]">{stats.total ? Math.max(0, 100 - Math.round(((stats.maintenance + machines.filter((m) => m.statut === "Hors service").length) / stats.total) * 100)) : 100}%</p>
-                <p className="mt-1 text-sm text-[#7a5f4b]">Score calculÃ© selon les statuts actuels du parc.</p>
+                <p className="mt-1 text-sm text-[#7a5f4b]">Score calculé selon les statuts actuels du parc.</p>
               </div>
             </div>
           </section>
+          {workspaceSection === "parc" ? (
           <div className="space-y-6 p-5 md:p-8">
             {errorMessage ? (
               <Card className="rounded-3xl border-red-200 bg-red-50 shadow-sm">
@@ -1018,8 +1035,123 @@ if (!isAuthenticated) {
               />
             </div>
           </div>
+          ) : (
+            <WorkspaceSection section={workspaceSection} />
+          )}
         </main>
       </div>
+    </div>
+  );
+}
+
+
+function WorkspaceSection({ section }) {
+  const sections = {
+    tickets: {
+      title: "Tickets SAV",
+      subtitle: "Centraliser les demandes, qualifier les urgences et suivre leur résolution.",
+      icon: Wrench,
+      cards: [
+        ["Nouveaux tickets", "0", "Demandes à qualifier"],
+        ["Urgents", "0", "Interventions prioritaires"],
+        ["En cours", "0", "Tickets actuellement traités"],
+      ],
+      emptyTitle: "Aucun ticket SAV ouvert",
+      emptyText: "Le prochain sprint connectera cet écran aux tickets, diagnostics et interventions enregistrés dans LPB Machines.",
+    },
+    preventif: {
+      title: "Maintenance préventive",
+      subtitle: "Piloter les plans, échéances, check-lists et opérations à programmer.",
+      icon: ShieldCheck,
+      cards: [
+        ["À planifier", "0", "Occurrences arrivées à échéance"],
+        ["Planifiées", "0", "Opérations déjà programmées"],
+        ["En retard", "0", "Préventifs dépassant l'échéance"],
+      ],
+      emptyTitle: "Aucun préventif à afficher",
+      emptyText: "Les plans de maintenance et leurs occurrences seront alimentés par le moteur préventif du backend.",
+    },
+    planning: {
+      title: "Planning SAV",
+      subtitle: "Organiser les interventions et visualiser la capacité opérationnelle.",
+      icon: CalendarDays,
+      cards: [
+        ["Aujourd'hui", "0", "Interventions prévues"],
+        ["Cette semaine", "0", "Créneaux planifiés"],
+        ["À affecter", "0", "Interventions sans technicien"],
+      ],
+      emptyTitle: "Planning disponible pour les prochaines affectations",
+      emptyText: "Cet espace accueillera le calendrier des interventions, les disponibilités et les exceptions de planning.",
+    },
+    techniciens: {
+      title: "Techniciens",
+      subtitle: "Suivre les profils, compétences, disponibilités et habilitations.",
+      icon: UserRound,
+      cards: [
+        ["Actifs", "0", "Techniciens disponibles"],
+        ["Indisponibles", "0", "Absences ou exceptions"],
+        ["Alertes", "0", "Compétences ou certifications"],
+      ],
+      emptyTitle: "Aucun profil technicien configuré",
+      emptyText: "Les profils techniques seront reliés aux compétences, zones de service et modèles de travail.",
+    },
+    tournees: {
+      title: "Tournées",
+      subtitle: "Préparer les routes, les étapes et les coûts de déplacement.",
+      icon: MapPin,
+      cards: [
+        ["À préparer", "0", "Tournées sans ordre définitif"],
+        ["En cours", "0", "Routes actuellement exécutées"],
+        ["Terminées", "0", "Tournées clôturées aujourd'hui"],
+      ],
+      emptyTitle: "Aucune tournée planifiée",
+      emptyText: "Le module calculera les étapes, les distances et les coûts à partir des interventions affectées.",
+    },
+  };
+
+  const config = sections[section] || sections.tickets;
+  const Icon = config.icon;
+
+  return (
+    <div className="space-y-6 p-5 md:p-8">
+      <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
+        <CardHeader>
+          <div className="flex items-start gap-4">
+            <div className="rounded-2xl bg-[#f0dfcd] p-3">
+              <Icon className="h-6 w-6 text-[#5b351f]" />
+            </div>
+            <div>
+              <CardTitle className="text-2xl text-[#2d1b12]">{config.title}</CardTitle>
+              <p className="mt-1 text-sm text-[#7a5f4b]">{config.subtitle}</p>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        {config.cards.map(([title, value, subtitle]) => (
+          <Card key={title} className="rounded-3xl border-[#e4d4c2] bg-[#fffdf8] shadow-sm">
+            <CardContent className="p-6">
+              <p className="text-sm font-semibold text-[#5b351f]">{title}</p>
+              <p className="mt-2 text-3xl font-extrabold text-[#2d1b12]">{value}</p>
+              <p className="mt-1 text-xs text-[#7a5f4b]">{subtitle}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="rounded-3xl border-dashed border-[#d8c4ad] bg-white shadow-sm">
+        <CardContent className="flex min-h-[280px] flex-col items-center justify-center p-8 text-center">
+          <div className="rounded-3xl bg-[#f0dfcd] p-4">
+            <Icon className="h-8 w-8 text-[#5b351f]" />
+          </div>
+          <h3 className="mt-5 text-xl font-bold text-[#2d1b12]">{config.emptyTitle}</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a5f4b]">{config.emptyText}</p>
+          <Badge variant="outline" className="mt-5 border-[#d8c4ad] text-[#5b351f]">
+            Module prêt à connecter
+          </Badge>
+        </CardContent>
+      </Card>
     </div>
   );
 }
