@@ -9,6 +9,7 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import TicketsBoard from "./TicketsBoard";
+import ClientsBoard from "./ClientsBoard";
 
 const SECTIONS = {
   preventif: {
@@ -61,8 +62,9 @@ const SECTIONS = {
   },
 };
 
-export default function WorkspaceSection({ section }) {
-  if (section === "tickets") return <TicketsBoard />;
+export default function WorkspaceSection({ section, clients = [], machines = [], ticketDraft = null, onCreateTicket, onTicketDraftConsumed }) {
+  if (section === "tickets") return <TicketsBoard clients={clients} machines={machines} initialContext={ticketDraft} onInitialContextConsumed={onTicketDraftConsumed} />;
+  if (section === "clients") return <ClientsBoard clients={clients} machines={machines} onCreateTicket={onCreateTicket} />;
 
   const config = SECTIONS[section] || SECTIONS.preventif;
   const Icon = config.icon;

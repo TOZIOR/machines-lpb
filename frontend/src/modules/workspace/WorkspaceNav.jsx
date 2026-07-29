@@ -8,12 +8,14 @@ import {
   ShieldCheck,
   TicketCheck,
   UsersRound,
+  Building2,
   Wrench,
 } from "lucide-react";
 
 const SECTIONS = [
   { key: "cockpit", label: "Cockpit", icon: LayoutDashboard },
   { key: "parc", label: "Parc machines", icon: Server },
+  { key: "clients", label: "Clients", icon: Building2 },
   { key: "tickets", label: "Tickets SAV", icon: TicketCheck },
   { key: "preventif", label: "Préventif", icon: ShieldCheck },
   { key: "planning", label: "Planning", icon: CalendarDays },

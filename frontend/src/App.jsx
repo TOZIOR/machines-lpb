@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import CockpitDashboard from "@/modules/workspace/CockpitDashboard";
 import WorkspaceHeader from "@/modules/workspace/WorkspaceHeader";
 import WorkspaceSection from "@/modules/workspace/WorkspaceSection";
+import MachineWorkspace from "@/modules/workspace/MachineWorkspace";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || "change-me";
@@ -272,6 +273,7 @@ function handleLogout() {
   const [clientFilter, setClientFilter] = useState("Tous");
   const [activeTab, setActiveTab] = useState("fiche");
   const [workspaceSection, setWorkspaceSection] = useState("cockpit");
+  const [ticketDraft, setTicketDraft] = useState(null);
 
   const [showMachineForm, setShowMachineForm] = useState(false);
   
@@ -970,11 +972,15 @@ if (!isAuthenticated) {
                 labelSettings={labelSettings}
                 setLabelSettings={setLabelSettings}
                 errorMessage={errorMessage}
+                onOpenTickets={() => {
+                  setTicketDraft({ machineId: selectedMachine?.id || "", machineCode: selectedMachine ? getMachineCode(selectedMachine) : "", clientId: selectedClient?.id || "", clientName: selectedClient?.nom || selectedPennylaneCustomer?.name || selectedPennylaneCustomer?.label || "" });
+                  setWorkspaceSection("tickets");
+                }}
               />
             </div>
           </div>
           ) : workspaceSection !== "cockpit" ? (
-            <WorkspaceSection section={workspaceSection} />
+            <WorkspaceSection section={workspaceSection} clients={clients} machines={machines} ticketDraft={ticketDraft} onTicketDraftConsumed={() => setTicketDraft(null)} onCreateTicket={(context) => { setTicketDraft(context); setWorkspaceSection("tickets"); }} />
           ) : null}
         </main>
       </div>
@@ -992,7 +998,7 @@ function MachineDetailPanel({
   maintenanceReason, setMaintenanceReason, maintenanceAction, setMaintenanceAction,
   maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate, actionPennylaneCustomerId,
   setActionPennylaneCustomerId, onApplyAction, onDeleteMachine, labelSettings, setLabelSettings,
-  errorMessage,
+  errorMessage, onOpenTickets,
 }) {
   if (!machine) {
     return (
@@ -1006,7 +1012,18 @@ function MachineDetailPanel({
   const publicUrl = getMachinePublicUrl(machine);
 
   return (
-    <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
+    <MachineWorkspace
+      machine={machine}
+      code={code}
+      clientName={pennylaneCustomer?.name || pennylaneCustomer?.label || "Sans client"}
+      status={actionStatus}
+      historyCount={history.length}
+      onTerrain={() => setActiveTab("terrain")}
+      onHistory={() => setActiveTab("historique")}
+      onQr={() => setActiveTab("qr")}
+      onOpenTickets={onOpenTickets}
+    >
+      <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
       <CardHeader className="space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -1148,7 +1165,8 @@ function MachineDetailPanel({
           />
         ) : null}
       </CardContent>
-    </Card>
+      </Card>
+    </MachineWorkspace>
   );
 }
 
