@@ -1,6 +1,13 @@
-import { CalendarDays, MapPin, ShieldCheck, UserRound, Wrench } from "lucide-react";
+import {
+  CalendarDays,
+  FileText,
+  MapPin,
+  Settings,
+  ShieldCheck,
+  UserRound,
+  Wrench,
+} from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const SECTIONS = {
@@ -23,7 +30,7 @@ const SECTIONS = {
     cards: [
       ["À planifier", "0", "Occurrences arrivées à échéance"],
       ["Planifiées", "0", "Opérations déjà programmées"],
-      ["En retard", "0", "Préventifs dépassant l'échéance"],
+      ["En retard", "0", "Préventifs dépassant l’échéance"],
     ],
     emptyTitle: "Aucun préventif à afficher",
     emptyText: "Les plans de maintenance et leurs occurrences seront alimentés par le moteur préventif du backend.",
@@ -33,7 +40,7 @@ const SECTIONS = {
     subtitle: "Organiser les interventions et visualiser la capacité opérationnelle.",
     icon: CalendarDays,
     cards: [
-      ["Aujourd'hui", "0", "Interventions prévues"],
+      ["Aujourd’hui", "0", "Interventions prévues"],
       ["Cette semaine", "0", "Créneaux planifiés"],
       ["À affecter", "0", "Interventions sans technicien"],
     ],
@@ -59,10 +66,34 @@ const SECTIONS = {
     cards: [
       ["À préparer", "0", "Tournées sans ordre définitif"],
       ["En cours", "0", "Routes actuellement exécutées"],
-      ["Terminées", "0", "Tournées clôturées aujourd'hui"],
+      ["Terminées", "0", "Tournées clôturées aujourd’hui"],
     ],
     emptyTitle: "Aucune tournée planifiée",
     emptyText: "Le module calculera les étapes, les distances et les coûts à partir des interventions affectées.",
+  },
+  documents: {
+    title: "Documents techniques",
+    subtitle: "Centraliser les pièces utiles au suivi des machines et des interventions.",
+    icon: FileText,
+    cards: [
+      ["Rapports", "0", "Comptes rendus d’intervention"],
+      ["Notices", "0", "Documentation constructeurs"],
+      ["Pièces jointes", "0", "Photos, factures et justificatifs"],
+    ],
+    emptyTitle: "Aucun document technique enregistré",
+    emptyText: "Les documents seront rattachés aux machines, tickets, interventions et contrats sans dupliquer les données CRM.",
+  },
+  reglages: {
+    title: "Réglages",
+    subtitle: "Configurer le fonctionnement technique de LPB Machines.",
+    icon: Settings,
+    cards: [
+      ["Statuts", "7", "Cycle de vie des machines"],
+      ["Intégrations", "2", "CRM et Pennylane"],
+      ["Automatisations", "0", "Règles techniques actives"],
+    ],
+    emptyTitle: "Configuration centralisée",
+    emptyText: "Cet espace accueillera les paramètres du SAV, du préventif, des compteurs, des déplacements et des notifications techniques.",
   },
 };
 
@@ -84,28 +115,27 @@ export default function WorkspaceSection({ section }) {
             </div>
           </div>
         </CardHeader>
+
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-3">
+            {config.cards.map(([title, value, description]) => (
+              <div key={title} className="rounded-3xl border border-[#e4d4c2] bg-white p-5 shadow-sm">
+                <div className="text-sm font-semibold text-[#7a5f4b]">{title}</div>
+                <div className="mt-2 text-3xl font-black text-[#2d1b12]">{value}</div>
+                <div className="mt-1 text-xs text-[#9a8571]">{description}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        {config.cards.map(([title, value, subtitle]) => (
-          <Card key={title} className="rounded-3xl border-[#e4d4c2] bg-[#fffdf8] shadow-sm">
-            <CardContent className="p-6">
-              <p className="text-sm font-semibold text-[#5b351f]">{title}</p>
-              <p className="mt-2 text-3xl font-extrabold text-[#2d1b12]">{value}</p>
-              <p className="mt-1 text-xs text-[#7a5f4b]">{subtitle}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Card className="rounded-3xl border-dashed border-[#d8c4ad] bg-white shadow-sm">
+      <Card className="rounded-3xl border-dashed border-[#d8c4ad] bg-white/70 shadow-none">
         <CardContent className="flex min-h-[280px] flex-col items-center justify-center p-8 text-center">
           <div className="rounded-3xl bg-[#f0dfcd] p-4">
             <Icon className="h-8 w-8 text-[#5b351f]" />
           </div>
-          <h3 className="mt-5 text-xl font-bold text-[#2d1b12]">{config.emptyTitle}</h3>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7a5f4b]">{config.emptyText}</p>
-          <Badge variant="outline" className="mt-5 border-[#d8c4ad] text-[#5b351f]">Module prêt à connecter</Badge>
+          <h3 className="mt-5 text-xl font-extrabold text-[#2d1b12]">{config.emptyTitle}</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#7a5f4b]">{config.emptyText}</p>
         </CardContent>
       </Card>
     </div>
