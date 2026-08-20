@@ -668,6 +668,7 @@ app.get(
         .json({
           error:
             "CRM_UNAVAILABLE",
+
           message:
             error.message,
         });
@@ -1089,7 +1090,6 @@ app.patch(
               `Un client doit être sélectionné lorsque le statut est « ${nextStatut} ».`,
           });
       }
-
       const nextMaintenanceStartDate =
         toSqlDate(
           body.maintenanceStartDate,
@@ -1498,6 +1498,1102 @@ app.delete(
         res,
         error,
         "DELETE /api/machines/:id ERROR:",
+      );
+    } finally {
+      client.release();
+    }
+  },
+);
+
+function savTicketSelectSql(
+  alias = "t",
+) {
+  return `
+    ${alias}.id,
+    ${alias}.reference,
+    ${alias}.title,
+    ${alias}.description,
+    ${alias}.machine_id as "machineId",
+    ${alias}.crm_client_id as "crmClientId",
+    ${alias}.pennylane_customer_id as "pennylaneCustomerId",
+    ${alias}.client_name_snapshot as "clientName",
+    ${alias}.machine_code_snapshot as "machineCode",
+    ${alias}.priority,
+    ${alias}.status,
+    ${alias}.technician,
+    ${alias}.desired_date as "desiredDate",
+    ${alias}.planned_repair_date as "plannedRepairDate",
+    ${alias}.quote_status as "quoteStatus",
+    ${alias}.created_at as "createdAt",
+    ${alias}.updated_at as "updatedAt",
+    ${alias}.closed_at as "closedAt"
+  `;
+}
+
+function savEventSelectSql(
+  alias = "e",
+) {
+  return `
+    ${alias}.id,
+    ${alias}.ticket_id as "ticketId",
+    ${alias}.event_type as "eventType",
+    ${alias}.label,
+    ${alias}.comment,
+    ${alias}.from_status as "fromStatus",
+    ${alias}.to_status as "toStatus",
+    ${alias}.from_quote_status as "fromQuoteStatus",
+    ${alias}.to_quote_status as "toQuoteStatus",
+    ${alias}.planned_repair_date as "plannedRepairDate",
+    ${alias}.actor_name as "actorName",
+    ${alias}.metadata,
+    ${alias}.created_at as "createdAt"
+  `;
+}
+
+async function findSavTicket(
+  value,
+  db = pool,
+) {
+  const result = await db.query(
+    `
+    select *
+    from public.sav_tickets
+    where id::text = $1
+       or reference = $1
+    limit 1
+    `,
+    [value],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function resolveSavMachine(
+  machineValue,
+  db = pool,
+) {
+  if (
+    machineValue === undefined ||
+    machineValue === null ||
+    machineValue === ""
+  ) {
+    return null;
+  }
+
+  const machine =
+    await findMachineByCodeOrUuid(
+      String(machineValue),
+      db,
+    );
+
+  if (!machine) {
+    const error =
+      new Error(
+        "La machine sélectionnée est introuvable.",
+      );
+
+    error.statusCode = 400;
+    error.code =
+      "SAV_MACHINE_NOT_FOUND";
+
+    throw error;
+  }
+
+  return machine;
+}
+
+async function nextSavReference(
+  db = pool,
+) {
+  const year =
+    new Date().getFullYear();
+
+  await db.query(
+    "select pg_advisory_xact_lock(hashtext($1))",
+    [
+      `sav-ticket-reference-${year}`,
+    ],
+  );
+
+  const result =
+    await db.query(
+      `
+      select reference
+      from public.sav_tickets
+      where reference like $1
+      order by reference desc
+      limit 1
+      `,
+      [`SAV-${year}-%`],
+    );
+
+  let nextNumber = 1;
+
+  if (
+    result.rows.length > 0
+  ) {
+    const lastNumber = Number(
+      String(
+        result.rows[0].reference,
+      )
+        .split("-")
+        .pop(),
+    );
+
+    if (
+      !Number.isNaN(
+        lastNumber,
+      )
+    ) {
+      nextNumber =
+        lastNumber + 1;
+    }
+  }
+
+  return `SAV-${year}-${String(
+    nextNumber,
+  ).padStart(4, "0")}`;
+}
+
+async function insertSavEvent(
+  db,
+  {
+    ticketId,
+    eventType,
+    label,
+    comment = null,
+    fromStatus = null,
+    toStatus = null,
+    fromQuoteStatus = null,
+    toQuoteStatus = null,
+    plannedRepairDate = null,
+    actorName = null,
+    metadata = {},
+  },
+) {
+  const result =
+    await db.query(
+      `
+      insert into public.sav_ticket_events (
+        ticket_id,
+        event_type,
+        label,
+        comment,
+        from_status,
+        to_status,
+        from_quote_status,
+        to_quote_status,
+        planned_repair_date,
+        actor_name,
+        metadata
+      )
+      values (
+        $1,$2,$3,$4,$5,$6,
+        $7,$8,$9,$10,$11::jsonb
+      )
+      returning
+        ${savEventSelectSql(
+          "sav_ticket_events",
+        )}
+      `,
+      [
+        ticketId,
+        eventType,
+        label,
+        comment,
+        fromStatus,
+        toStatus,
+        fromQuoteStatus,
+        toQuoteStatus,
+        plannedRepairDate,
+        actorName,
+        JSON.stringify(
+          metadata || {},
+        ),
+      ],
+    );
+
+  return result.rows[0];
+}
+
+app.get(
+  "/api/sav/tickets",
+  requireAdmin,
+  async (_req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          select
+            ${savTicketSelectSql(
+              "t",
+            )}
+          from public.sav_tickets t
+          order by
+            t.created_at desc
+          `,
+        );
+
+      return res.json(
+        result.rows,
+      );
+    } catch (error) {
+      return errorResponse(
+        res,
+        error,
+        "GET /api/sav/tickets ERROR:",
+      );
+    }
+  },
+);
+
+app.get(
+  "/api/sav/tickets/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const ticket =
+        await findSavTicket(
+          req.params.id,
+        );
+
+      if (!ticket) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "SAV_TICKET_NOT_FOUND",
+
+            message:
+              "Ticket SAV introuvable.",
+          });
+      }
+
+      const ticketResult =
+        await pool.query(
+          `
+          select
+            ${savTicketSelectSql(
+              "t",
+            )}
+          from public.sav_tickets t
+          where t.id = $1
+          limit 1
+          `,
+          [ticket.id],
+        );
+
+      const eventsResult =
+        await pool.query(
+          `
+          select
+            ${savEventSelectSql(
+              "e",
+            )}
+          from public.sav_ticket_events e
+          where e.ticket_id = $1
+          order by
+            e.created_at asc
+          `,
+          [ticket.id],
+        );
+
+      return res.json({
+        ...ticketResult.rows[0],
+
+        history:
+          eventsResult.rows,
+      });
+    } catch (error) {
+      return errorResponse(
+        res,
+        error,
+        "GET /api/sav/tickets/:id ERROR:",
+      );
+    }
+  },
+);
+
+app.get(
+  "/api/sav/tickets/:id/events",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const ticket =
+        await findSavTicket(
+          req.params.id,
+        );
+
+      if (!ticket) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "SAV_TICKET_NOT_FOUND",
+
+            message:
+              "Ticket SAV introuvable.",
+          });
+      }
+
+      const result =
+        await pool.query(
+          `
+          select
+            ${savEventSelectSql(
+              "e",
+            )}
+          from public.sav_ticket_events e
+          where e.ticket_id = $1
+          order by
+            e.created_at asc
+          `,
+          [ticket.id],
+        );
+
+      return res.json(
+        result.rows,
+      );
+    } catch (error) {
+      return errorResponse(
+        res,
+        error,
+        "GET /api/sav/tickets/:id/events ERROR:",
+      );
+    }
+  },
+);
+
+app.post(
+  "/api/sav/tickets",
+  requireAdmin,
+  async (req, res) => {
+    const client =
+      await pool.connect();
+
+    try {
+      await client.query(
+        "begin",
+      );
+
+      const body =
+        req.body || {};
+
+      const title =
+        String(
+          body.title || "",
+        ).trim();
+
+      if (!title) {
+        await client.query(
+          "rollback",
+        );
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "SAV_TITLE_REQUIRED",
+
+            message:
+              "L'objet du ticket SAV est obligatoire.",
+          });
+      }
+      const machine =
+        await resolveSavMachine(
+          body.machineId ||
+            body.machineCode ||
+            null,
+          client,
+        );
+
+      const reference =
+        String(
+          body.reference || "",
+        ).trim() ||
+        (await nextSavReference(
+          client,
+        ));
+
+      const priority =
+        String(
+          body.priority ||
+            "NORMALE",
+        )
+          .trim()
+          .toUpperCase();
+
+      const status =
+        String(
+          body.status ||
+            "NOUVEAU",
+        )
+          .trim()
+          .toUpperCase();
+
+      const quoteStatus =
+        String(
+          body.quoteStatus ||
+            "A_FAIRE",
+        )
+          .trim()
+          .toUpperCase();
+
+      const desiredDate =
+        toSqlDate(
+          body.desiredDate,
+        );
+
+      const plannedRepairDate =
+        toSqlDate(
+          body.plannedRepairDate,
+        );
+
+      const result =
+        await client.query(
+          `
+          insert into public.sav_tickets (
+            reference,
+            title,
+            description,
+            machine_id,
+            crm_client_id,
+            pennylane_customer_id,
+            client_name_snapshot,
+            machine_code_snapshot,
+            priority,
+            status,
+            technician,
+            desired_date,
+            planned_repair_date,
+            quote_status,
+            closed_at
+          )
+          values (
+            $1,$2,$3,$4,$5,$6,
+            $7,$8,$9,$10,$11,$12,
+            $13,$14,$15
+          )
+          returning
+            ${savTicketSelectSql(
+              "sav_tickets",
+            )}
+          `,
+          [
+            reference,
+            title,
+            body.description ||
+              null,
+            machine?.id ||
+              null,
+            body.crmClientId ||
+              body.clientId ||
+              null,
+            body.pennylaneCustomerId ||
+              null,
+            body.clientName ||
+              body.clientNameSnapshot ||
+              null,
+            body.machineCode ||
+              machine?.code ||
+              null,
+            priority,
+            status,
+            body.technician ||
+              null,
+            desiredDate,
+            plannedRepairDate,
+            quoteStatus,
+            status ===
+            "CLOTURE"
+              ? new Date()
+              : null,
+          ],
+        );
+
+      const ticket =
+        result.rows[0];
+
+      await insertSavEvent(
+        client,
+        {
+          ticketId:
+            ticket.id,
+
+          eventType:
+            "CREATION",
+
+          label:
+            "Ouverture du ticket",
+
+          comment:
+            String(
+              body.comment ||
+                body.description ||
+                "Ticket SAV créé.",
+            ).trim() ||
+            "Ticket SAV créé.",
+
+          fromStatus:
+            null,
+
+          toStatus:
+            ticket.status,
+
+          plannedRepairDate:
+            ticket.plannedRepairDate,
+
+          actorName:
+            getActorName(req),
+
+          metadata: {
+            source:
+              "ADMIN",
+
+            machineCode:
+              ticket.machineCode ||
+              null,
+
+            crmClientId:
+              ticket.crmClientId ||
+              null,
+          },
+        },
+      );
+
+      await client.query(
+        "commit",
+      );
+
+      return res
+        .status(201)
+        .json(ticket);
+    } catch (error) {
+      await client.query(
+        "rollback",
+      );
+
+      if (
+        error.statusCode ===
+        400
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              error.code ||
+              "SAV_BAD_REQUEST",
+
+            message:
+              error.message,
+          });
+      }
+
+      return errorResponse(
+        res,
+        error,
+        "POST /api/sav/tickets ERROR:",
+      );
+    } finally {
+      client.release();
+    }
+  },
+);
+
+app.patch(
+  "/api/sav/tickets/:id",
+  requireAdmin,
+  async (req, res) => {
+    const client =
+      await pool.connect();
+
+    try {
+      await client.query(
+        "begin",
+      );
+
+      const current =
+        await findSavTicket(
+          req.params.id,
+          client,
+        );
+
+      if (!current) {
+        await client.query(
+          "rollback",
+        );
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "SAV_TICKET_NOT_FOUND",
+
+            message:
+              "Ticket SAV introuvable.",
+          });
+      }
+
+      const body =
+        req.body || {};
+
+      let machine =
+        null;
+
+      if (
+        body.machineId !==
+          undefined ||
+        body.machineCode !==
+          undefined
+      ) {
+        machine =
+          await resolveSavMachine(
+            body.machineId ||
+              body.machineCode ||
+              null,
+            client,
+          );
+      }
+
+      const nextTitle =
+        body.title !==
+        undefined
+          ? String(
+              body.title,
+            ).trim()
+          : current.title;
+
+      if (!nextTitle) {
+        await client.query(
+          "rollback",
+        );
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "SAV_TITLE_REQUIRED",
+
+            message:
+              "L'objet du ticket SAV est obligatoire.",
+          });
+      }
+
+      const nextDescription =
+        body.description !==
+        undefined
+          ? body.description ||
+            null
+          : current.description;
+
+      const nextMachineId =
+        body.machineId !==
+          undefined ||
+        body.machineCode !==
+          undefined
+          ? machine?.id ||
+            null
+          : current.machine_id;
+
+      const nextMachineCode =
+        body.machineId !==
+          undefined ||
+        body.machineCode !==
+          undefined
+          ? body.machineCode ||
+            machine?.code ||
+            null
+          : current.machine_code_snapshot;
+
+      const nextCrmClientId =
+        body.crmClientId !==
+        undefined
+          ? body.crmClientId ||
+            null
+          : body.clientId !==
+            undefined
+            ? body.clientId ||
+              null
+            : current.crm_client_id;
+
+      const nextPennylaneCustomerId =
+        body.pennylaneCustomerId !==
+        undefined
+          ? body.pennylaneCustomerId ||
+            null
+          : current.pennylane_customer_id;
+
+      const nextClientName =
+        body.clientName !==
+        undefined
+          ? body.clientName ||
+            null
+          : body.clientNameSnapshot !==
+            undefined
+            ? body.clientNameSnapshot ||
+              null
+            : current.client_name_snapshot;
+
+      const nextPriority =
+        body.priority !==
+        undefined
+          ? String(
+              body.priority,
+            )
+              .trim()
+              .toUpperCase()
+          : current.priority;
+
+      const nextStatus =
+        body.status !==
+        undefined
+          ? String(
+              body.status,
+            )
+              .trim()
+              .toUpperCase()
+          : current.status;
+
+      const nextTechnician =
+        body.technician !==
+        undefined
+          ? body.technician ||
+            null
+          : current.technician;
+
+      const nextDesiredDate =
+        body.desiredDate !==
+        undefined
+          ? toSqlDate(
+              body.desiredDate,
+            )
+          : current.desired_date;
+
+      const nextPlannedRepairDate =
+        body.plannedRepairDate !==
+        undefined
+          ? toSqlDate(
+              body.plannedRepairDate,
+            )
+          : current.planned_repair_date;
+
+      const nextQuoteStatus =
+        body.quoteStatus !==
+        undefined
+          ? String(
+              body.quoteStatus,
+            )
+              .trim()
+              .toUpperCase()
+          : current.quote_status;
+
+      const nextClosedAt =
+        nextStatus ===
+        "CLOTURE"
+          ? current.closed_at ||
+            new Date()
+          : null;
+
+      const result =
+        await client.query(
+          `
+          update public.sav_tickets
+          set
+            title = $1,
+            description = $2,
+            machine_id = $3,
+            crm_client_id = $4,
+            pennylane_customer_id = $5,
+            client_name_snapshot = $6,
+            machine_code_snapshot = $7,
+            priority = $8,
+            status = $9,
+            technician = $10,
+            desired_date = $11,
+            planned_repair_date = $12,
+            quote_status = $13,
+            closed_at = $14
+          where id = $15
+          returning
+            ${savTicketSelectSql(
+              "sav_tickets",
+            )}
+          `,
+          [
+            nextTitle,
+            nextDescription,
+            nextMachineId,
+            nextCrmClientId,
+            nextPennylaneCustomerId,
+            nextClientName,
+            nextMachineCode,
+            nextPriority,
+            nextStatus,
+            nextTechnician,
+            nextDesiredDate,
+            nextPlannedRepairDate,
+            nextQuoteStatus,
+            nextClosedAt,
+            current.id,
+          ],
+        );
+
+      const ticket =
+        result.rows[0];
+
+      const statusChanged =
+        String(
+          current.status,
+        ) !==
+        String(
+          nextStatus,
+        );
+
+      const quoteChanged =
+        String(
+          current.quote_status,
+        ) !==
+        String(
+          nextQuoteStatus,
+        );
+
+      const plannedDateChanged =
+        String(
+          current.planned_repair_date ||
+            "",
+        ) !==
+        String(
+          nextPlannedRepairDate ||
+            "",
+        );
+
+      const comment =
+        String(
+          body.comment ||
+            body.commentaire ||
+            "",
+        ).trim() ||
+        null;
+
+      if (statusChanged) {
+        await insertSavEvent(
+          client,
+          {
+            ticketId:
+              current.id,
+
+            eventType:
+              body.eventType ||
+              "STATUS_CHANGE",
+
+            label:
+              body.label ||
+              `${current.status} → ${nextStatus}`,
+
+            comment,
+
+            fromStatus:
+              current.status,
+
+            toStatus:
+              nextStatus,
+
+            plannedRepairDate:
+              nextPlannedRepairDate,
+
+            actorName:
+              getActorName(req),
+
+            metadata: {
+              source:
+                "ADMIN",
+
+              direction:
+                body.direction ||
+                null,
+            },
+          },
+        );
+      }
+
+      if (quoteChanged) {
+        await insertSavEvent(
+          client,
+          {
+            ticketId:
+              current.id,
+
+            eventType:
+              "QUOTE_STATUS",
+
+            label:
+              "Mise à jour devis Pennylane",
+
+            comment:
+              body.quoteComment ||
+              `${current.quote_status} → ${nextQuoteStatus}`,
+
+            fromQuoteStatus:
+              current.quote_status,
+
+            toQuoteStatus:
+              nextQuoteStatus,
+
+            actorName:
+              getActorName(req),
+
+            metadata: {
+              source:
+                "ADMIN",
+            },
+          },
+        );
+      }
+
+      if (
+        !statusChanged &&
+        !quoteChanged &&
+        (
+          comment ||
+          plannedDateChanged
+        )
+      ) {
+        await insertSavEvent(
+          client,
+          {
+            ticketId:
+              current.id,
+
+            eventType:
+              plannedDateChanged
+                ? "PLANNING_UPDATE"
+                : "COMMENT",
+
+            label:
+              plannedDateChanged
+                ? "Mise à jour de la date de réparation"
+                : "Commentaire SAV",
+
+            comment,
+
+            plannedRepairDate:
+              nextPlannedRepairDate,
+
+            actorName:
+              getActorName(req),
+
+            metadata: {
+              source:
+                "ADMIN",
+            },
+          },
+        );
+      }
+
+      await client.query(
+        "commit",
+      );
+
+      return res.json(
+        ticket,
+      );
+    } catch (error) {
+      await client.query(
+        "rollback",
+      );
+
+      if (
+        error.statusCode ===
+        400
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              error.code ||
+              "SAV_BAD_REQUEST",
+
+            message:
+              error.message,
+          });
+      }
+
+      return errorResponse(
+        res,
+        error,
+        "PATCH /api/sav/tickets/:id ERROR:",
+      );
+    } finally {
+      client.release();
+    }
+  },
+);
+
+app.delete(
+  "/api/sav/tickets/:id",
+  requireAdmin,
+  async (req, res) => {
+    const client =
+      await pool.connect();
+
+    try {
+      await client.query(
+        "begin",
+      );
+
+      const ticket =
+        await findSavTicket(
+          req.params.id,
+          client,
+        );
+
+      if (!ticket) {
+        await client.query(
+          "rollback",
+        );
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "SAV_TICKET_NOT_FOUND",
+
+            message:
+              "Ticket SAV introuvable.",
+          });
+      }
+
+      await client.query(
+        `
+        delete
+        from public.sav_tickets
+        where id = $1
+        `,
+        [ticket.id],
+      );
+
+      await client.query(
+        "commit",
+      );
+
+      return res.json({
+        ok: true,
+
+        deletedTicketId:
+          ticket.id,
+
+        deletedReference:
+          ticket.reference,
+      });
+    } catch (error) {
+      await client.query(
+        "rollback",
+      );
+
+      return errorResponse(
+        res,
+        error,
+        "DELETE /api/sav/tickets/:id ERROR:",
       );
     } finally {
       client.release();
