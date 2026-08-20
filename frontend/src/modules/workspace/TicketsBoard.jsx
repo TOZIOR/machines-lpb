@@ -7,7 +7,10 @@ import {
   CircleDot,
   ClipboardList,
   Clock3,
+  FileText,
+  History,
   Loader2,
+  MessageSquare,
   Plus,
   Search,
   TicketCheck,
@@ -18,7 +21,12 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -28,23 +36,97 @@ const API_BASE_URL = String(
   import.meta.env.VITE_API_BASE_URL || "/api",
 ).replace(/\/+$/, "");
 
-const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || "";
+const ADMIN_API_KEY =
+  import.meta.env.VITE_ADMIN_API_KEY || "";
 
 const COLUMNS = [
-  { key: "NOUVEAU", label: "Nouveau", icon: CircleDot },
-  { key: "DIAGNOSTIC", label: "Diagnostic", icon: ClipboardList },
-  { key: "PIECES", label: "Attente pièces", icon: Clock3 },
-  { key: "PLANIFIE", label: "Planifié", icon: CalendarClock },
-  { key: "EN_COURS", label: "En cours", icon: Wrench },
-  { key: "CLOTURE", label: "Clôturé", icon: CheckCircle2 },
+  {
+    key: "NOUVEAU",
+    label: "Nouveau",
+    icon: CircleDot,
+  },
+  {
+    key: "DIAGNOSTIC",
+    label: "Diagnostic",
+    icon: ClipboardList,
+  },
+  {
+    key: "PIECES",
+    label: "Attente pièces",
+    icon: Clock3,
+  },
+  {
+    key: "PLANIFIE",
+    label: "Planifié",
+    icon: CalendarClock,
+  },
+  {
+    key: "EN_COURS",
+    label: "En cours",
+    icon: Wrench,
+  },
+  {
+    key: "CLOTURE",
+    label: "Clôturé",
+    icon: CheckCircle2,
+  },
 ];
 
-const PRIORITIES = ["BASSE", "NORMALE", "HAUTE", "CRITIQUE"];
+const PRIORITIES = [
+  "BASSE",
+  "NORMALE",
+  "HAUTE",
+  "CRITIQUE",
+];
+
+const QUOTE_STATUSES = [
+  {
+    key: "A_FAIRE",
+    label: "À faire",
+  },
+  {
+    key: "ENVOYE",
+    label: "Envoyé — en attente de réponse",
+  },
+  {
+    key: "VALIDE",
+    label: "Validé par le client",
+  },
+  {
+    key: "REFUSE",
+    label: "Refusé par le client",
+  },
+];
+
+function normalizeTicket(ticket) {
+  return {
+    ...ticket,
+    history: Array.isArray(ticket.history)
+      ? ticket.history
+      : [],
+    quoteStatus:
+      ticket.quoteStatus || "A_FAIRE",
+    plannedRepairDate:
+      ticket.plannedRepairDate || null,
+  };
+}
 
 function loadTickets() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const raw =
+      localStorage.getItem(STORAGE_KEY);
+
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.map(normalizeTicket);
   } catch {
     localStorage.removeItem(STORAGE_KEY);
     return [];
@@ -52,7 +134,10 @@ function loadTickets() {
 }
 
 function saveTickets(tickets) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tickets));
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(tickets),
+  );
 }
 
 function priorityClasses(priority) {
@@ -77,8 +162,28 @@ function nextStatus(status) {
   );
 
   return (
-    COLUMNS[Math.min(index + 1, COLUMNS.length - 1)]?.key ||
-    status
+    COLUMNS[
+      Math.min(
+        index + 1,
+        COLUMNS.length - 1,
+      )
+    ]?.key || status
+  );
+}
+
+function getStatusLabel(status) {
+  return (
+    COLUMNS.find(
+      (column) => column.key === status,
+    )?.label || status
+  );
+}
+
+function getQuoteStatusLabel(status) {
+  return (
+    QUOTE_STATUSES.find(
+      (item) => item.key === status,
+    )?.label || "À faire"
   );
 }
 
@@ -92,11 +197,20 @@ function getClientKey(client) {
 }
 
 function getClientName(client) {
-  return String(client?.nom || client?.name || "");
+  return String(
+    client?.nom ||
+      client?.name ||
+      "",
+  );
 }
 
-function machineBelongsToClient(machine, client) {
-  if (!machine || !client) return false;
+function machineBelongsToClient(
+  machine,
+  client,
+) {
+  if (!machine || !client) {
+    return false;
+  }
 
   const machineClientIds = [
     machine.clientId,
@@ -114,13 +228,57 @@ function machineBelongsToClient(machine, client) {
     .filter(Boolean)
     .map(String);
 
-  return machineClientIds.some((value) =>
-    clientIds.includes(value),
+  return machineClientIds.some(
+    (value) =>
+      clientIds.includes(value),
   );
 }
 
+function formatDate(value) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return new Intl.DateTimeFormat(
+      "fr-FR",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      },
+    ).format(
+      new Date(`${value}T12:00:00`),
+    );
+  } catch {
+    return value;
+  }
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return new Intl.DateTimeFormat(
+      "fr-FR",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      },
+    ).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
 async function searchCrmClients(search) {
-  const params = new URLSearchParams();
+  const params =
+    new URLSearchParams();
 
   params.set("search", search);
   params.set("limit", "20");
@@ -133,14 +291,16 @@ async function searchCrmClients(search) {
         Accept: "application/json",
         ...(ADMIN_API_KEY
           ? {
-              "x-api-key": ADMIN_API_KEY,
+              "x-api-key":
+                ADMIN_API_KEY,
             }
           : {}),
       },
     },
   );
 
-  const raw = await response.text();
+  const raw =
+    await response.text();
 
   let payload = null;
 
@@ -169,11 +329,15 @@ async function searchCrmClients(search) {
     return payload.data;
   }
 
-  if (Array.isArray(payload?.clients)) {
+  if (
+    Array.isArray(payload?.clients)
+  ) {
     return payload.clients;
   }
 
-  if (Array.isArray(payload?.items)) {
+  if (
+    Array.isArray(payload?.items)
+  ) {
     return payload.items;
   }
 
@@ -186,100 +350,190 @@ export default function TicketsBoard({
   initialContext = null,
   onInitialContextConsumed,
 }) {
-  const [tickets, setTickets] = useState(loadTickets);
-  const [query, setQuery] = useState("");
-  const [showForm, setShowForm] = useState(
-    Boolean(initialContext),
-  );
-  const [selectedTicket, setSelectedTicket] =
-    useState(null);
+  const [tickets, setTickets] =
+    useState(loadTickets);
 
-  const [clientSearch, setClientSearch] = useState(
+  const [query, setQuery] =
+    useState("");
+
+  const [showForm, setShowForm] =
+    useState(
+      Boolean(initialContext),
+    );
+
+  const [
+    selectedTicket,
+    setSelectedTicket,
+  ] = useState(null);
+
+  const [
+    transitionTicket,
+    setTransitionTicket,
+  ] = useState(null);
+
+  const [
+    transitionForm,
+    setTransitionForm,
+  ] = useState({
+    comment: "",
+    plannedRepairDate: "",
+  });
+
+  const [
+    clientSearch,
+    setClientSearch,
+  ] = useState(
     initialContext?.clientName || "",
   );
 
-  const [clientResults, setClientResults] = useState([]);
-  const [clientSearchOpen, setClientSearchOpen] =
-    useState(false);
-  const [clientSearchLoading, setClientSearchLoading] =
-    useState(false);
-  const [clientSearchError, setClientSearchError] =
-    useState("");
+  const [
+    clientResults,
+    setClientResults,
+  ] = useState([]);
 
-  const clientSearchRequest = useRef(0);
+  const [
+    clientSearchOpen,
+    setClientSearchOpen,
+  ] = useState(false);
 
-  const [form, setForm] = useState(() => ({
-    title: "",
-    machineCode: initialContext?.machineCode || "",
-    clientName: initialContext?.clientName || "",
-    priority: "NORMALE",
-    description: "",
-    technician: "",
-    machineId: initialContext?.machineId || "",
-    clientId: initialContext?.clientId || "",
-    pennylaneCustomerId:
-      initialContext?.pennylaneCustomerId || "",
-    desiredDate: "",
-  }));
+  const [
+    clientSearchLoading,
+    setClientSearchLoading,
+  ] = useState(false);
+
+  const [
+    clientSearchError,
+    setClientSearchError,
+  ] = useState("");
+
+  const clientSearchRequest =
+    useRef(0);
+
+  const [form, setForm] = useState(
+    () => ({
+      title: "",
+      machineCode:
+        initialContext?.machineCode ||
+        "",
+      clientName:
+        initialContext?.clientName ||
+        "",
+      priority: "NORMALE",
+      description: "",
+      technician: "",
+      machineId:
+        initialContext?.machineId ||
+        "",
+      clientId:
+        initialContext?.clientId ||
+        "",
+      pennylaneCustomerId:
+        initialContext?.pennylaneCustomerId ||
+        "",
+      desiredDate: "",
+    }),
+  );
 
   useEffect(() => {
-    const normalizedSearch = clientSearch.trim();
+    const normalizedSearch =
+      clientSearch.trim();
 
     if (!showForm) {
       return undefined;
     }
 
-    if (form.clientId && normalizedSearch === form.clientName) {
+    if (
+      form.clientId &&
+      normalizedSearch ===
+        form.clientName
+    ) {
       setClientResults([]);
       setClientSearchOpen(false);
+
       return undefined;
     }
 
-    if (normalizedSearch.length < 2) {
+    if (
+      normalizedSearch.length < 2
+    ) {
       setClientResults([]);
       setClientSearchError("");
       setClientSearchOpen(false);
       setClientSearchLoading(false);
+
       return undefined;
     }
 
-    const requestId = clientSearchRequest.current + 1;
-    clientSearchRequest.current = requestId;
+    const requestId =
+      clientSearchRequest.current + 1;
 
-    const timer = window.setTimeout(async () => {
-      try {
-        setClientSearchLoading(true);
-        setClientSearchError("");
+    clientSearchRequest.current =
+      requestId;
 
-        const results = await searchCrmClients(
-          normalizedSearch,
-        );
+    const timer =
+      window.setTimeout(
+        async () => {
+          try {
+            setClientSearchLoading(
+              true,
+            );
 
-        if (clientSearchRequest.current !== requestId) {
-          return;
-        }
+            setClientSearchError("");
 
-        setClientResults(results.slice(0, 20));
-        setClientSearchOpen(true);
-      } catch (error) {
-        if (clientSearchRequest.current !== requestId) {
-          return;
-        }
+            const results =
+              await searchCrmClients(
+                normalizedSearch,
+              );
 
-        console.error("CRM CLIENT SEARCH ERROR", error);
+            if (
+              clientSearchRequest.current !==
+              requestId
+            ) {
+              return;
+            }
 
-        setClientResults([]);
-        setClientSearchOpen(true);
-        setClientSearchError(
-          error?.message ||
-            "Impossible de rechercher les clients.",
-        );
-      } finally {
-        if (clientSearchRequest.current === requestId) {
-          setClientSearchLoading(false);
-        }
-      }
-    }, 300);
+            setClientResults(
+              results.slice(0, 20),
+            );
+
+            setClientSearchOpen(
+              true,
+            );
+          } catch (error) {
+            if (
+              clientSearchRequest.current !==
+              requestId
+            ) {
+              return;
+            }
+
+            console.error(
+              "CRM CLIENT SEARCH ERROR",
+              error,
+            );
+
+            setClientResults([]);
+            setClientSearchOpen(
+              true,
+            );
+
+            setClientSearchError(
+              error?.message ||
+                "Impossible de rechercher les clients.",
+            );
+          } finally {
+            if (
+              clientSearchRequest.current ===
+              requestId
+            ) {
+              setClientSearchLoading(
+                false,
+              );
+            }
+          }
+        },
+        300,
+      );
 
     return () => {
       window.clearTimeout(timer);
@@ -291,17 +545,64 @@ export default function TicketsBoard({
     form.clientName,
   ]);
 
+  function updateTickets(updater) {
+    setTickets((current) => {
+      const updated =
+        typeof updater === "function"
+          ? updater(current)
+          : updater;
+
+      saveTickets(updated);
+
+      return updated;
+    });
+  }
+
+  function updateSingleTicket(
+    ticketId,
+    updater,
+  ) {
+    let updatedTicket = null;
+
+    updateTickets((current) =>
+      current.map((ticket) => {
+        if (
+          ticket.id !== ticketId
+        ) {
+          return ticket;
+        }
+
+        updatedTicket =
+          typeof updater ===
+          "function"
+            ? updater(ticket)
+            : updater;
+
+        return updatedTicket;
+      }),
+    );
+
+    if (updatedTicket) {
+      setSelectedTicket(
+        updatedTicket,
+      );
+    }
+  }
+
   function closeForm() {
     setShowForm(false);
     setClientResults([]);
     setClientSearchOpen(false);
     setClientSearchError("");
+
     onInitialContextConsumed?.();
   }
 
   function selectMachine(machineId) {
     const machine = machines.find(
-      (item) => String(item.id) === String(machineId),
+      (item) =>
+        String(item.id) ===
+        String(machineId),
     );
 
     if (!machine) {
@@ -320,20 +621,31 @@ export default function TicketsBoard({
       machine.numeroInterne ||
       machine.id;
 
-    const client = clients.find((item) =>
-      machineBelongsToClient(machine, item),
+    const client = clients.find(
+      (item) =>
+        machineBelongsToClient(
+          machine,
+          item,
+        ),
     );
 
     setForm((current) => ({
       ...current,
-      machineId: machine.id,
-      machineCode: String(machineCode || ""),
+
+      machineId:
+        machine.id,
+
+      machineCode:
+        String(machineCode || ""),
+
       clientId: client
         ? getClientKey(client)
         : current.clientId || "",
+
       clientName: client
         ? getClientName(client)
         : current.clientName || "",
+
       pennylaneCustomerId:
         client?.pennylaneCustomerId ||
         machine.pennylaneCustomerId ||
@@ -342,39 +654,41 @@ export default function TicketsBoard({
     }));
 
     if (client) {
-      setClientSearch(getClientName(client));
+      setClientSearch(
+        getClientName(client),
+      );
+
       setClientSearchOpen(false);
       setClientResults([]);
     }
   }
 
   function chooseClient(client) {
-    if (!client) return;
+    if (!client) {
+      return;
+    }
 
-    const clientId = getClientKey(client);
-    const clientName = getClientName(client);
+    const clientId =
+      getClientKey(client);
 
-    const selectedMachine = machines.find(
-      (item) =>
-        String(item.id) === String(form.machineId),
-    );
+    const clientName =
+      getClientName(client);
 
-    const keepMachine =
-      selectedMachine &&
-      machineBelongsToClient(selectedMachine, client);
-
+    /*
+     * IMPORTANT :
+     * le choix d'un client ne doit jamais
+     * supprimer la machine déjà sélectionnée
+     * dans le ticket SAV.
+     */
     setForm((current) => ({
       ...current,
+
       clientId,
       clientName,
+
       pennylaneCustomerId:
-        client.pennylaneCustomerId || "",
-      machineId: keepMachine
-        ? current.machineId
-        : "",
-      machineCode: keepMachine
-        ? current.machineCode
-        : "",
+        client.pennylaneCustomerId ||
+        "",
     }));
 
     setClientSearch(clientName);
@@ -384,13 +698,16 @@ export default function TicketsBoard({
   }
 
   function clearSelectedClient() {
+    /*
+     * On efface uniquement le client.
+     * La machine reste sélectionnée.
+     */
     setForm((current) => ({
       ...current,
+
       clientId: "",
       clientName: "",
       pennylaneCustomerId: "",
-      machineId: "",
-      machineCode: "",
     }));
 
     setClientSearch("");
@@ -399,8 +716,11 @@ export default function TicketsBoard({
     setClientSearchError("");
   }
 
-  function handleClientSearchChange(event) {
-    const value = event.target.value;
+  function handleClientSearchChange(
+    event,
+  ) {
+    const value =
+      event.target.value;
 
     setClientSearch(value);
 
@@ -408,108 +728,167 @@ export default function TicketsBoard({
       form.clientId &&
       value !== form.clientName
     ) {
+      /*
+       * Là encore, on ne touche
+       * jamais à la machine.
+       */
       setForm((current) => ({
         ...current,
+
         clientId: "",
         clientName: "",
         pennylaneCustomerId: "",
-        machineId: "",
-        machineCode: "",
       }));
     }
   }
 
-  const filteredTickets = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+  const filteredTickets =
+    useMemo(() => {
+      const normalized =
+        query.trim().toLowerCase();
 
-    if (!normalized) return tickets;
+      if (!normalized) {
+        return tickets;
+      }
 
-    return tickets.filter((ticket) =>
-      [
-        ticket.reference,
-        ticket.title,
-        ticket.machineCode,
-        ticket.clientName,
-        ticket.technician,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized),
-    );
-  }, [tickets, query]);
+      return tickets.filter(
+        (ticket) =>
+          [
+            ticket.reference,
+            ticket.title,
+            ticket.machineCode,
+            ticket.clientName,
+            ticket.technician,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(normalized),
+      );
+    }, [tickets, query]);
 
   const metrics = useMemo(
     () => ({
       open: tickets.filter(
-        (ticket) => ticket.status !== "CLOTURE",
+        (ticket) =>
+          ticket.status !==
+          "CLOTURE",
       ).length,
 
       critical: tickets.filter(
         (ticket) =>
-          ticket.priority === "CRITIQUE" &&
-          ticket.status !== "CLOTURE",
+          ticket.priority ===
+            "CRITIQUE" &&
+          ticket.status !==
+            "CLOTURE",
       ).length,
 
       active: tickets.filter(
-        (ticket) => ticket.status === "EN_COURS",
+        (ticket) =>
+          ticket.status ===
+          "EN_COURS",
       ).length,
 
       planned: tickets.filter(
-        (ticket) => ticket.status === "PLANIFIE",
+        (ticket) =>
+          ticket.status ===
+          "PLANIFIE",
       ).length,
     }),
     [tickets],
   );
 
-  function updateTickets(updater) {
-    setTickets((current) => {
-      const updated =
-        typeof updater === "function"
-          ? updater(current)
-          : updater;
-
-      saveTickets(updated);
-
-      return updated;
-    });
-  }
-
   function createTicket(event) {
     event.preventDefault();
 
-    if (!form.title.trim()) return;
+    if (!form.title.trim()) {
+      return;
+    }
 
     const now = new Date();
 
     const ticket = {
-      id: crypto.randomUUID
-        ? crypto.randomUUID()
-        : String(Date.now()),
+      id:
+        crypto.randomUUID
+          ? crypto.randomUUID()
+          : String(Date.now()),
 
-      reference: `SAV-${now.getFullYear()}-${String(
-        tickets.length + 1,
-      ).padStart(4, "0")}`,
+      reference:
+        `SAV-${now.getFullYear()}-${String(
+          tickets.length + 1,
+        ).padStart(4, "0")}`,
 
-      title: form.title.trim(),
+      title:
+        form.title.trim(),
 
-      machineId: form.machineId || null,
-      machineCode: form.machineCode.trim(),
+      machineId:
+        form.machineId || null,
 
-      clientId: form.clientId || null,
-      crmClientId: form.clientId || null,
+      machineCode:
+        form.machineCode.trim(),
+
+      clientId:
+        form.clientId || null,
+
+      crmClientId:
+        form.clientId || null,
+
       pennylaneCustomerId:
-        form.pennylaneCustomerId || null,
+        form.pennylaneCustomerId ||
+        null,
 
-      clientName: form.clientName.trim(),
+      clientName:
+        form.clientName.trim(),
 
-      priority: form.priority,
-      description: form.description.trim(),
-      technician: form.technician.trim(),
-      desiredDate: form.desiredDate || null,
+      priority:
+        form.priority,
+
+      description:
+        form.description.trim(),
+
+      technician:
+        form.technician.trim(),
+
+      desiredDate:
+        form.desiredDate || null,
+
+      plannedRepairDate: null,
+
+      quoteStatus: "A_FAIRE",
 
       status: "NOUVEAU",
-      createdAt: now.toISOString(),
+
+      createdAt:
+        now.toISOString(),
+
+      updatedAt:
+        now.toISOString(),
+
+      history: [
+        {
+          id:
+            crypto.randomUUID
+              ? crypto.randomUUID()
+              : `${Date.now()}-creation`,
+
+          type: "CREATION",
+
+          createdAt:
+            now.toISOString(),
+
+          label:
+            "Ouverture du ticket",
+
+          comment:
+            form.description.trim() ||
+            "Ticket SAV créé.",
+
+          fromStatus: null,
+
+          toStatus:
+            "NOUVEAU",
+        },
+      ],
     };
 
     updateTickets((current) => [
@@ -535,30 +914,256 @@ export default function TicketsBoard({
     setClientSearchOpen(false);
 
     setShowForm(false);
+
     onInitialContextConsumed?.();
+
     setSelectedTicket(ticket);
   }
 
-  function moveTicket(ticketId, status) {
+  function openTransition(ticket) {
+    const targetStatus =
+      nextStatus(ticket.status);
+
+    setTransitionTicket(ticket);
+
+    setTransitionForm({
+      comment: "",
+      plannedRepairDate:
+        targetStatus ===
+        "PLANIFIE"
+          ? ticket.plannedRepairDate ||
+            ""
+          : "",
+    });
+  }
+
+  function closeTransition() {
+    setTransitionTicket(null);
+
+    setTransitionForm({
+      comment: "",
+      plannedRepairDate: "",
+    });
+  }
+
+  function confirmTransition(
+    event,
+  ) {
+    event.preventDefault();
+
+    if (!transitionTicket) {
+      return;
+    }
+
+    const comment =
+      transitionForm.comment.trim();
+
+    if (!comment) {
+      return;
+    }
+
+    const fromStatus =
+      transitionTicket.status;
+
+    const toStatus =
+      nextStatus(fromStatus);
+
+    if (
+      toStatus === "PLANIFIE" &&
+      !transitionForm.plannedRepairDate
+    ) {
+      return;
+    }
+
+    const now = new Date();
+
+    const transitionEvent = {
+      id:
+        crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-transition`,
+
+      type:
+        "STATUS_CHANGE",
+
+      createdAt:
+        now.toISOString(),
+
+      label:
+        `${getStatusLabel(
+          fromStatus,
+        )} → ${getStatusLabel(
+          toStatus,
+        )}`,
+
+      comment,
+
+      fromStatus,
+
+      toStatus,
+
+      plannedRepairDate:
+        toStatus === "PLANIFIE"
+          ? transitionForm.plannedRepairDate
+          : transitionTicket.plannedRepairDate ||
+            null,
+    };
+
+    let updatedTicket = null;
+
     updateTickets((current) =>
-      current.map((ticket) =>
-        ticket.id === ticketId
-          ? {
-              ...ticket,
-              status,
-            }
-          : ticket,
-      ),
+      current.map((ticket) => {
+        if (
+          ticket.id !==
+          transitionTicket.id
+        ) {
+          return ticket;
+        }
+
+        updatedTicket = {
+          ...ticket,
+
+          /*
+           * On conserve explicitement
+           * toutes les informations métier.
+           */
+          machineId:
+            ticket.machineId || null,
+
+          machineCode:
+            ticket.machineCode || "",
+
+          clientId:
+            ticket.clientId || null,
+
+          crmClientId:
+            ticket.crmClientId ||
+            ticket.clientId ||
+            null,
+
+          pennylaneCustomerId:
+            ticket.pennylaneCustomerId ||
+            null,
+
+          clientName:
+            ticket.clientName || "",
+
+          technician:
+            ticket.technician || "",
+
+          status:
+            toStatus,
+
+          plannedRepairDate:
+            toStatus === "PLANIFIE"
+              ? transitionForm.plannedRepairDate
+              : ticket.plannedRepairDate ||
+                null,
+
+          updatedAt:
+            now.toISOString(),
+
+          history: [
+            ...(ticket.history || []),
+            transitionEvent,
+          ],
+        };
+
+        return updatedTicket;
+      }),
     );
 
-    setSelectedTicket((current) =>
-      current?.id === ticketId
-        ? {
-            ...current,
-            status,
-          }
-        : current,
+    if (updatedTicket) {
+      setSelectedTicket(
+        updatedTicket,
+      );
+    }
+
+    closeTransition();
+  }
+
+  function updateQuoteStatus(
+    ticketId,
+    quoteStatus,
+  ) {
+    const now = new Date();
+
+    let updatedTicket = null;
+
+    updateTickets((current) =>
+      current.map((ticket) => {
+        if (
+          ticket.id !== ticketId
+        ) {
+          return ticket;
+        }
+
+        const previousStatus =
+          ticket.quoteStatus ||
+          "A_FAIRE";
+
+        if (
+          previousStatus ===
+          quoteStatus
+        ) {
+          updatedTicket =
+            ticket;
+
+          return ticket;
+        }
+
+        const historyEvent = {
+          id:
+            crypto.randomUUID
+              ? crypto.randomUUID()
+              : `${Date.now()}-quote`,
+
+          type:
+            "QUOTE_STATUS",
+
+          createdAt:
+            now.toISOString(),
+
+          label:
+            "Mise à jour devis Pennylane",
+
+          comment:
+            `${getQuoteStatusLabel(
+              previousStatus,
+            )} → ${getQuoteStatusLabel(
+              quoteStatus,
+            )}`,
+
+          fromQuoteStatus:
+            previousStatus,
+
+          toQuoteStatus:
+            quoteStatus,
+        };
+
+        updatedTicket = {
+          ...ticket,
+
+          quoteStatus,
+
+          updatedAt:
+            now.toISOString(),
+
+          history: [
+            ...(ticket.history || []),
+            historyEvent,
+          ],
+        };
+
+        return updatedTicket;
+      }),
     );
+
+    if (updatedTicket) {
+      setSelectedTicket(
+        updatedTicket,
+      );
+    }
   }
 
   function deleteTicket(ticketId) {
@@ -572,7 +1177,8 @@ export default function TicketsBoard({
 
     updateTickets((current) =>
       current.filter(
-        (ticket) => ticket.id !== ticketId,
+        (ticket) =>
+          ticket.id !== ticketId,
       ),
     );
 
@@ -592,8 +1198,9 @@ export default function TicketsBoard({
           </h2>
 
           <p className="mt-1 text-sm text-[#7a5f4b]">
-            Qualifier, diagnostiquer et suivre chaque
-            incident technique sans empiéter sur le CRM.
+            Qualifier, diagnostiquer,
+            planifier et suivre chaque
+            intervention technique.
           </p>
         </div>
 
@@ -604,7 +1211,9 @@ export default function TicketsBoard({
             <input
               value={query}
               onChange={(event) =>
-                setQuery(event.target.value)
+                setQuery(
+                  event.target.value,
+                )
               }
               placeholder="Référence, machine, client..."
               className="w-full bg-transparent text-sm outline-none"
@@ -612,7 +1221,9 @@ export default function TicketsBoard({
           </div>
 
           <Button
-            onClick={() => setShowForm(true)}
+            onClick={() =>
+              setShowForm(true)
+            }
             className="h-11 rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
           >
             <Plus className="mr-2 h-4 w-4" />
@@ -651,7 +1262,11 @@ export default function TicketsBoard({
       <div className="overflow-x-auto pb-3">
         <div className="grid min-w-[1500px] grid-cols-6 gap-3">
           {COLUMNS.map(
-            ({ key, label, icon: Icon }) => {
+            ({
+              key,
+              label,
+              icon: Icon,
+            }) => {
               const columnTickets =
                 filteredTickets.filter(
                   (ticket) =>
@@ -673,65 +1288,99 @@ export default function TicketsBoard({
                       variant="outline"
                       className="border-[#d8c4ad]"
                     >
-                      {columnTickets.length}
+                      {
+                        columnTickets.length
+                      }
                     </Badge>
                   </div>
 
                   <div className="space-y-3">
-                    {columnTickets.map((ticket) => (
-                      <button
-                        key={ticket.id}
-                        type="button"
-                        onClick={() =>
-                          setSelectedTicket(ticket)
-                        }
-                        className="w-full rounded-2xl border border-[#eadcc9] bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#9a6b46] hover:shadow-md"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="text-[11px] font-bold uppercase tracking-wide text-[#9a8571]">
-                            {ticket.reference}
-                          </span>
+                    {columnTickets.map(
+                      (ticket) => (
+                        <button
+                          key={ticket.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedTicket(
+                              ticket,
+                            )
+                          }
+                          className="w-full rounded-2xl border border-[#eadcc9] bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#9a6b46] hover:shadow-md"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wide text-[#9a8571]">
+                              {
+                                ticket.reference
+                              }
+                            </span>
 
-                          <span
-                            className={`rounded-full border px-2 py-1 text-[10px] font-bold ${priorityClasses(
-                              ticket.priority,
-                            )}`}
-                          >
-                            {ticket.priority}
-                          </span>
-                        </div>
-
-                        <h3 className="mt-2 font-extrabold text-[#2d1b12]">
-                          {ticket.title}
-                        </h3>
-
-                        <div className="mt-3 space-y-1 text-xs text-[#7a5f4b]">
-                          <div>
-                            {ticket.machineCode ||
-                              "Machine non renseignée"}
+                            <span
+                              className={`rounded-full border px-2 py-1 text-[10px] font-bold ${priorityClasses(
+                                ticket.priority,
+                              )}`}
+                            >
+                              {
+                                ticket.priority
+                              }
+                            </span>
                           </div>
 
-                          <div>
-                            {ticket.clientName ||
-                              "Client non renseigné"}
+                          <h3 className="mt-2 font-extrabold text-[#2d1b12]">
+                            {ticket.title}
+                          </h3>
+
+                          <div className="mt-3 space-y-1 text-xs text-[#7a5f4b]">
+                            <div className="font-semibold text-[#5b351f]">
+                              {ticket.machineCode ||
+                                "Machine non renseignée"}
+                            </div>
+
+                            <div>
+                              {ticket.clientName ||
+                                "Client non renseigné"}
+                            </div>
+
+                            {ticket.technician ? (
+                              <div className="flex items-center gap-1">
+                                <UserRound className="h-3 w-3" />
+                                {
+                                  ticket.technician
+                                }
+                              </div>
+                            ) : null}
+
+                            {ticket.plannedRepairDate ? (
+                              <div className="mt-2 flex items-center gap-1 rounded-lg bg-[#fff3e5] px-2 py-1 font-semibold text-[#5b351f]">
+                                <CalendarClock className="h-3 w-3" />
+                                Réparation prévue :{" "}
+                                {formatDate(
+                                  ticket.plannedRepairDate,
+                                )}
+                              </div>
+                            ) : null}
+
+                            {key ===
+                            "DIAGNOSTIC" ? (
+                              <div className="mt-2 flex items-center gap-1">
+                                <FileText className="h-3 w-3" />
+                                Devis :{" "}
+                                {getQuoteStatusLabel(
+                                  ticket.quoteStatus,
+                                )}
+                              </div>
+                            ) : null}
                           </div>
 
-                          {ticket.technician ? (
-                            <div className="flex items-center gap-1">
-                              <UserRound className="h-3 w-3" />
-                              {ticket.technician}
+                          {key !==
+                          "CLOTURE" ? (
+                            <div className="mt-4 flex items-center justify-end text-xs font-bold text-[#5b351f]">
+                              Étape suivante
+                              <ChevronRight className="ml-1 h-3 w-3" />
                             </div>
                           ) : null}
-                        </div>
-
-                        {key !== "CLOTURE" ? (
-                          <div className="mt-4 flex items-center justify-end text-xs font-bold text-[#5b351f]">
-                            Étape suivante
-                            <ChevronRight className="ml-1 h-3 w-3" />
-                          </div>
-                        ) : null}
-                      </button>
-                    ))}
+                        </button>
+                      ),
+                    )}
 
                     {!columnTickets.length ? (
                       <div className="rounded-2xl border border-dashed border-[#d8c4ad] px-3 py-8 text-center text-xs text-[#9a8571]">
@@ -761,7 +1410,8 @@ export default function TicketsBoard({
                 onChange={(event) =>
                   setForm({
                     ...form,
-                    title: event.target.value,
+                    title:
+                      event.target.value,
                   })
                 }
                 required
@@ -773,7 +1423,9 @@ export default function TicketsBoard({
                 <select
                   value={form.machineId}
                   onChange={(event) =>
-                    selectMachine(event.target.value)
+                    selectMachine(
+                      event.target.value,
+                    )
                   }
                   className="h-11 w-full rounded-2xl border border-[#d8c4ad] bg-white px-4 text-sm"
                 >
@@ -781,26 +1433,8 @@ export default function TicketsBoard({
                     Sélectionner une machine
                   </option>
 
-                  {machines
-                    .filter((machine) => {
-                      if (!form.clientId) {
-                        return true;
-                      }
-
-                      const selectedClient = {
-                        id: form.clientId,
-                        crmClientId:
-                          form.clientId,
-                        pennylaneCustomerId:
-                          form.pennylaneCustomerId,
-                      };
-
-                      return machineBelongsToClient(
-                        machine,
-                        selectedClient,
-                      );
-                    })
-                    .map((machine) => {
+                  {machines.map(
+                    (machine) => {
                       const code =
                         machine.code ||
                         machine.numero ||
@@ -809,14 +1443,24 @@ export default function TicketsBoard({
 
                       return (
                         <option
-                          key={machine.id}
-                          value={machine.id}
+                          key={
+                            machine.id
+                          }
+                          value={
+                            machine.id
+                          }
                         >
-                          {code} · {machine.marque}{" "}
-                          {machine.modele}
+                          {code} ·{" "}
+                          {
+                            machine.marque
+                          }{" "}
+                          {
+                            machine.modele
+                          }
                         </option>
                       );
-                    })}
+                    },
+                  )}
                 </select>
               </Field>
 
@@ -826,7 +1470,9 @@ export default function TicketsBoard({
                     <Search className="mr-2 h-4 w-4 shrink-0 text-[#9a8571]" />
 
                     <input
-                      value={clientSearch}
+                      value={
+                        clientSearch
+                      }
                       onChange={
                         handleClientSearchChange
                       }
@@ -835,7 +1481,9 @@ export default function TicketsBoard({
                           clientResults.length ||
                           clientSearchError
                         ) {
-                          setClientSearchOpen(true);
+                          setClientSearchOpen(
+                            true,
+                          );
                         }
                       }}
                       placeholder="Tapez le nom du client..."
@@ -850,9 +1498,10 @@ export default function TicketsBoard({
                     {form.clientId ? (
                       <button
                         type="button"
-                        onClick={clearSelectedClient}
+                        onClick={
+                          clearSelectedClient
+                        }
                         className="ml-2 rounded-lg p-1 text-[#9a8571] hover:bg-[#f0dfcd]"
-                        title="Effacer le client"
                       >
                         <X className="h-4 w-4" />
                       </button>
@@ -863,7 +1512,9 @@ export default function TicketsBoard({
                     <div className="absolute left-0 right-0 top-[48px] z-[120] max-h-72 overflow-y-auto rounded-2xl border border-[#d8c4ad] bg-white p-2 shadow-xl">
                       {clientSearchError ? (
                         <div className="px-3 py-3 text-sm text-red-700">
-                          {clientSearchError}
+                          {
+                            clientSearchError
+                          }
                         </div>
                       ) : null}
 
@@ -872,7 +1523,8 @@ export default function TicketsBoard({
                       clientResults.length ===
                         0 ? (
                         <div className="px-3 py-4 text-sm text-[#9a8571]">
-                          Aucun client trouvé.
+                          Aucun client
+                          trouvé.
                         </div>
                       ) : null}
 
@@ -934,16 +1586,20 @@ export default function TicketsBoard({
                   ) : null}
 
                   {!form.clientId &&
-                  clientSearch.length > 0 &&
-                  clientSearch.length < 2 ? (
+                  clientSearch.length >
+                    0 &&
+                  clientSearch.length <
+                    2 ? (
                     <p className="mt-1 text-xs text-[#9a8571]">
-                      Tapez au moins 2 caractères.
+                      Tapez au moins 2
+                      caractères.
                     </p>
                   ) : null}
 
                   {form.clientId ? (
                     <p className="mt-1 text-xs font-semibold text-green-700">
-                      Client CRM sélectionné
+                      Client CRM
+                      sélectionné
                     </p>
                   ) : null}
                 </div>
@@ -951,7 +1607,9 @@ export default function TicketsBoard({
 
               <Field label="Priorité">
                 <select
-                  value={form.priority}
+                  value={
+                    form.priority
+                  }
                   onChange={(event) =>
                     setForm({
                       ...form,
@@ -963,7 +1621,11 @@ export default function TicketsBoard({
                 >
                   {PRIORITIES.map(
                     (priority) => (
-                      <option key={priority}>
+                      <option
+                        key={
+                          priority
+                        }
+                      >
                         {priority}
                       </option>
                     ),
@@ -973,7 +1635,9 @@ export default function TicketsBoard({
 
               <Field label="Technicien">
                 <Input
-                  value={form.technician}
+                  value={
+                    form.technician
+                  }
                   onChange={(event) =>
                     setForm({
                       ...form,
@@ -987,7 +1651,9 @@ export default function TicketsBoard({
               <Field label="Date souhaitée">
                 <Input
                   type="date"
-                  value={form.desiredDate}
+                  value={
+                    form.desiredDate
+                  }
                   onChange={(event) =>
                     setForm({
                       ...form,
@@ -1001,7 +1667,9 @@ export default function TicketsBoard({
 
             <Field label="Description technique">
               <Textarea
-                value={form.description}
+                value={
+                  form.description
+                }
                 onChange={(event) =>
                   setForm({
                     ...form,
@@ -1036,7 +1704,9 @@ export default function TicketsBoard({
 
       {selectedTicket ? (
         <Modal
-          title={selectedTicket.reference}
+          title={
+            selectedTicket.reference
+          }
           onClose={() =>
             setSelectedTicket(null)
           }
@@ -1045,7 +1715,9 @@ export default function TicketsBoard({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-xl font-black text-[#2d1b12]">
-                  {selectedTicket.title}
+                  {
+                    selectedTicket.title
+                  }
                 </h3>
 
                 <span
@@ -1053,7 +1725,9 @@ export default function TicketsBoard({
                     selectedTicket.priority,
                   )}`}
                 >
-                  {selectedTicket.priority}
+                  {
+                    selectedTicket.priority
+                  }
                 </span>
               </div>
 
@@ -1090,16 +1764,93 @@ export default function TicketsBoard({
 
               <Info
                 label="Statut"
-                value={
-                  COLUMNS.find(
-                    (column) =>
-                      column.key ===
-                      selectedTicket.status,
-                  )?.label ||
-                  selectedTicket.status
-                }
+                value={getStatusLabel(
+                  selectedTicket.status,
+                )}
               />
             </div>
+
+            {selectedTicket.plannedRepairDate ? (
+              <div className="rounded-2xl border border-[#e5c89f] bg-[#fff3e5] p-4">
+                <div className="flex items-center gap-2 text-sm font-bold text-[#5b351f]">
+                  <CalendarClock className="h-5 w-5" />
+                  Réparation prévue
+                </div>
+
+                <div className="mt-2 text-xl font-black text-[#2d1b12]">
+                  {formatDate(
+                    selectedTicket.plannedRepairDate,
+                  )}
+                </div>
+
+                <p className="mt-1 text-sm text-[#7a5f4b]">
+                  Date annoncée pour
+                  la prise en charge de
+                  la réparation.
+                </p>
+              </div>
+            ) : null}
+
+            {selectedTicket.status ===
+            "DIAGNOSTIC" ? (
+              <div className="rounded-2xl border border-[#d8c4ad] bg-white p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-[#9a6b46]" />
+
+                  <div>
+                    <div className="font-bold text-[#2d1b12]">
+                      Devis Pennylane
+                    </div>
+
+                    <div className="text-xs text-[#7a5f4b]">
+                      Le devis reste
+                      créé et envoyé
+                      depuis Pennylane.
+                    </div>
+                  </div>
+                </div>
+
+                <Field label="État du devis">
+                  <select
+                    value={
+                      selectedTicket.quoteStatus ||
+                      "A_FAIRE"
+                    }
+                    onChange={(event) =>
+                      updateQuoteStatus(
+                        selectedTicket.id,
+                        event.target.value,
+                      )
+                    }
+                    className="h-11 w-full rounded-2xl border border-[#d8c4ad] bg-white px-4 text-sm"
+                  >
+                    {QUOTE_STATUSES.map(
+                      (item) => (
+                        <option
+                          key={
+                            item.key
+                          }
+                          value={
+                            item.key
+                          }
+                        >
+                          {
+                            item.label
+                          }
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </Field>
+              </div>
+            ) : null}
+
+            <TicketHistory
+              history={
+                selectedTicket.history ||
+                []
+              }
+            />
 
             <div className="flex flex-wrap justify-between gap-2 border-t border-[#eadcc9] pt-4">
               <Button
@@ -1121,15 +1872,13 @@ export default function TicketsBoard({
                   type="button"
                   className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
                   onClick={() =>
-                    moveTicket(
-                      selectedTicket.id,
-                      nextStatus(
-                        selectedTicket.status,
-                      ),
+                    openTransition(
+                      selectedTicket,
                     )
                   }
                 >
-                  Passer à l’étape suivante
+                  Passer à l’étape
+                  suivante
                   <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : null}
@@ -1137,6 +1886,196 @@ export default function TicketsBoard({
           </div>
         </Modal>
       ) : null}
+
+      {transitionTicket ? (
+        <Modal
+          title={`Passer à l’étape « ${getStatusLabel(
+            nextStatus(
+              transitionTicket.status,
+            ),
+          )} »`}
+          onClose={closeTransition}
+        >
+          <form
+            className="space-y-5"
+            onSubmit={
+              confirmTransition
+            }
+          >
+            <div className="rounded-2xl border border-[#eadcc9] bg-white p-4">
+              <div className="text-xs font-bold uppercase tracking-wide text-[#9a8571]">
+                Transition
+              </div>
+
+              <div className="mt-1 font-bold text-[#2d1b12]">
+                {getStatusLabel(
+                  transitionTicket.status,
+                )}
+                {" → "}
+                {getStatusLabel(
+                  nextStatus(
+                    transitionTicket.status,
+                  ),
+                )}
+              </div>
+            </div>
+
+            {nextStatus(
+              transitionTicket.status,
+            ) === "PLANIFIE" ? (
+              <Field label="Date prévue de réparation *">
+                <Input
+                  type="date"
+                  value={
+                    transitionForm.plannedRepairDate
+                  }
+                  onChange={(event) =>
+                    setTransitionForm(
+                      (current) => ({
+                        ...current,
+                        plannedRepairDate:
+                          event.target.value,
+                      }),
+                    )
+                  }
+                  required
+                />
+
+                <p className="mt-1 text-xs text-[#7a5f4b]">
+                  Cette date sera
+                  visible directement
+                  sur le ticket afin de
+                  pouvoir informer le
+                  client.
+                </p>
+              </Field>
+            ) : null}
+
+            <Field label="Commentaire / motif du changement *">
+              <Textarea
+                value={
+                  transitionForm.comment
+                }
+                onChange={(event) =>
+                  setTransitionForm(
+                    (current) => ({
+                      ...current,
+                      comment:
+                        event.target.value,
+                    }),
+                  )
+                }
+                placeholder="Expliquer pourquoi le ticket passe à l’étape suivante..."
+                rows={4}
+                required
+              />
+            </Field>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={
+                  closeTransition
+                }
+                className="rounded-2xl"
+              >
+                Annuler
+              </Button>
+
+              <Button
+                type="submit"
+                className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
+              >
+                Valider le changement
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+    </div>
+  );
+}
+
+function TicketHistory({
+  history,
+}) {
+  const ordered = [...history].sort(
+    (a, b) =>
+      new Date(b.createdAt) -
+      new Date(a.createdAt),
+  );
+
+  return (
+    <div className="rounded-2xl border border-[#d8c4ad] bg-white p-4">
+      <div className="mb-4 flex items-center gap-2">
+        <History className="h-5 w-5 text-[#9a6b46]" />
+
+        <div>
+          <div className="font-bold text-[#2d1b12]">
+            Historique SAV
+          </div>
+
+          <div className="text-xs text-[#7a5f4b]">
+            Chaque changement
+            d’étape est conservé.
+          </div>
+        </div>
+      </div>
+
+      {!ordered.length ? (
+        <div className="rounded-xl border border-dashed border-[#d8c4ad] p-4 text-center text-sm text-[#9a8571]">
+          Aucun événement
+          enregistré.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {ordered.map(
+            (item) => (
+              <div
+                key={item.id}
+                className="rounded-xl border border-[#eadcc9] bg-[#fffaf3] p-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="font-semibold text-[#2d1b12]">
+                    {item.label}
+                  </div>
+
+                  <div className="text-xs text-[#9a8571]">
+                    {formatDateTime(
+                      item.createdAt,
+                    )}
+                  </div>
+                </div>
+
+                {item.comment ? (
+                  <div className="mt-2 flex items-start gap-2 text-sm text-[#7a5f4b]">
+                    <MessageSquare className="mt-0.5 h-4 w-4 shrink-0" />
+
+                    <span>
+                      {
+                        item.comment
+                      }
+                    </span>
+                  </div>
+                ) : null}
+
+                {item.plannedRepairDate &&
+                item.toStatus ===
+                  "PLANIFIE" ? (
+                  <div className="mt-2 text-xs font-semibold text-[#5b351f]">
+                    Réparation prévue
+                    le{" "}
+                    {formatDate(
+                      item.plannedRepairDate,
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ),
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1224,7 +2163,10 @@ function Modal({
   );
 }
 
-function Field({ label, children }) {
+function Field({
+  label,
+  children,
+}) {
   return (
     <label className="block">
       <span className="mb-1 block text-sm font-semibold text-[#5b351f]">
@@ -1236,7 +2178,10 @@ function Field({ label, children }) {
   );
 }
 
-function Info({ label, value }) {
+function Info({
+  label,
+  value,
+}) {
   return (
     <div className="rounded-2xl border border-[#eadcc9] bg-white p-4">
       <div className="text-xs font-bold uppercase tracking-wide text-[#9a8571]">
