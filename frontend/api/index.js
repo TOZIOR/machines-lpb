@@ -10,7 +10,10 @@ const app = express();
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "change-me";
 const CRM_API_URL = process.env.CRM_API_URL || "";
-const CRM_API_KEY = process.env.CRM_API_KEY || "";
+const CRM_API_KEY =
+  process.env.LPB_PLATFORM_API_KEY ||
+  process.env.CRM_API_KEY ||
+  "";
 const CRM_CLIENTS_PATH = process.env.CRM_CLIENTS_PATH || "/api/clients";
 const CRON_API_KEY = process.env.CRON_API_KEY || "";
 
