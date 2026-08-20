@@ -2,14 +2,23 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import pg from "pg";
+import { createCrmSdk } from "./crm.js";
 
 const { Pool } = pg;
 const app = express();
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "change-me";
-const PENNYLANE_API_KEY = process.env.PENNYLANE_API_KEY || "";
+const CRM_API_URL = process.env.CRM_API_URL || "";
+const CRM_API_KEY = process.env.CRM_API_KEY || "";
+const CRM_CLIENTS_PATH = process.env.CRM_CLIENTS_PATH || "/api/clients";
 const CRON_API_KEY = process.env.CRON_API_KEY || "";
+
+const crm = createCrmSdk({
+  baseUrl: CRM_API_URL,
+  apiKey: CRM_API_KEY,
+  clientsPath: CRM_CLIENTS_PATH,
+});
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -128,7 +137,8 @@ function machineSelectSql() {
     facture_achat as "factureAchat",
     prix_achat as "prixAchat",
     statut,
-    client_id as "clientId",
+    coalesce(crm_client_id, client_id::text) as "clientId",
+    crm_client_id as "crmClientId",
     lieu,
     type_mise_disposition as "typeMiseDisposition",
     date_mise_disposition as "dateMiseDisposition",
@@ -175,76 +185,6 @@ function deriveMovementAction({ current, nextStatus, clientChanged, maintenanceC
   return "Mise à jour machine";
 }
 
-function normalizePennylaneCustomer(customer) {
-  const name =
-    customer.name ||
-    customer.company_name ||
-    customer.label ||
-    `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
-    customer.id;
-
-  return {
-    id: String(customer.id),
-    name,
-    label: name,
-    email: customer.email || customer.emails?.[0] || "",
-    phone: customer.phone || customer.phone_number || "",
-    address:
-      typeof customer.address === "string"
-        ? customer.address
-        : typeof customer.billing_address === "string"
-        ? customer.billing_address
-        : "",
-  };
-}
-
-async function fetchAllPennylaneCustomers() {
-  if (!PENNYLANE_API_KEY) {
-    throw new Error("PENNYLANE_API_KEY manquante");
-  }
-
-  let allCustomers = [];
-  let cursor = null;
-  let page = 0;
-
-  do {
-    page += 1;
-
-    const url = new URL("https://app.pennylane.com/api/external/v2/customers");
-    url.searchParams.set("limit", "100");
-
-    if (cursor) {
-      url.searchParams.set("cursor", cursor);
-    }
-
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${PENNYLANE_API_KEY}`,
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Erreur API Pennylane ${response.status} : ${text}`);
-    }
-
-    const data = await response.json();
-    const items = data.items || data.customers || [];
-
-    allCustomers = [...allCustomers, ...items];
-
-    cursor = data.next_cursor || data.nextCursor || null;
-
-    if (!data.has_more && !data.hasMore) {
-      cursor = null;
-    }
-  } while (cursor && page < 20);
-
-  return allCustomers.map(normalizePennylaneCustomer);
-}
-
 app.get("/api/health", async (_req, res) => {
   try {
     await pool.query("select 1");
@@ -276,27 +216,16 @@ app.get("/api/machines", requireAdmin, async (_req, res) => {
 
 app.get("/api/clients", requireAdmin, async (_req, res) => {
   try {
-    const result = await pool.query(`
-      select
-        id,
-        name as nom,
-        name,
-        concat_ws(', ', nullif(address, ''), nullif(postal_code, ''), nullif(city, '')) as adresse,
-        address,
-        postal_code as "postalCode",
-        city,
-        phone as telephone,
-        phone,
-        email,
-        null::text as commentaire,
-        pennylane_id as "pennylaneCustomerId"
-      from clients
-      order by name asc
-    `);
-
-    res.json(result.rows);
+    const clients = await crm.clients.list();
+    return res.json(clients);
   } catch (error) {
-    errorResponse(res, error, "GET /api/clients ERROR:");
+    const status = Number(error.statusCode || error.status || 502);
+    console.error("GET /api/clients CRM ERROR:", error);
+    return res.status(status >= 400 && status <= 599 ? status : 502).json({
+      error: error.code || "CRM_UNAVAILABLE",
+      message: error.message,
+      detail: error.detail || null,
+    });
   }
 });
 
@@ -402,134 +331,36 @@ app.get("/api/public/machines/:code/movements", async (req, res) => {
   }
 });
 
+// Routes de compatibilité frontend : aucun appel direct à Pennylane.
 app.get("/api/pennylane/status", requireAdmin, (_req, res) => {
-  res.json({
-    connected: Boolean(PENNYLANE_API_KEY),
-    lastSyncAt: "",
-  });
+  res.json({ connected: false, delegatedTo: "CRM", lastSyncAt: "" });
 });
 
 app.get("/api/pennylane/customers", requireAdmin, async (_req, res) => {
   try {
-    const customers = await fetchAllPennylaneCustomers();
-    res.json(customers);
+    return res.json(await crm.clients.list());
   } catch (error) {
-    errorResponse(res, error, "GET /api/pennylane/customers ERROR:");
+    return res.status(502).json({ error: "CRM_UNAVAILABLE", message: error.message });
   }
 });
 
-app.get("/api/pennylane/products", requireAdmin, (_req, res) => {
-  res.json([]);
-});
-
-app.get("/api/pennylane/invoices", requireAdmin, (_req, res) => {
-  res.json([]);
-});
-
+app.get("/api/pennylane/products", requireAdmin, (_req, res) => res.json([]));
+app.get("/api/pennylane/invoices", requireAdmin, (_req, res) => res.json([]));
 app.post("/api/pennylane/connect", requireAdmin, (_req, res) => {
-  res.json({
-    connected: Boolean(PENNYLANE_API_KEY),
-    lastSyncAt: new Date().toLocaleString("fr-FR"),
-  });
+  res.status(410).json({ error: "PENNYLANE_DELEGATED_TO_CRM", message: "Pennylane est désormais géré exclusivement par le CRM." });
 });
-
 app.post("/api/pennylane/disconnect", requireAdmin, (_req, res) => {
-  res.json({
-    connected: false,
-    lastSyncAt: "",
+  res.status(410).json({ error: "PENNYLANE_DELEGATED_TO_CRM", message: "Pennylane est désormais géré exclusivement par le CRM." });
+});
+app.post("/api/pennylane/sync/customers", requireAdmin, (_req, res) => {
+  res.status(410).json({ error: "PENNYLANE_DELEGATED_TO_CRM", message: "La synchronisation des clients est désormais réalisée par le CRM." });
+});
+
+app.post("/api/clients", requireAdmin, (_req, res) => {
+  return res.status(405).json({
+    error: "CLIENTS_OWNED_BY_CRM",
+    message: "Les clients doivent être créés et modifiés dans le CRM.",
   });
-});
-
-app.post("/api/pennylane/sync/customers", requireAdmin, async (_req, res) => {
-  try {
-    const customers = await fetchAllPennylaneCustomers();
-
-    let syncedCount = 0;
-
-    for (const customer of customers) {
-      if (!customer.id || !customer.name) {
-        continue;
-      }
-
-      await pool.query(
-        `
-        insert into clients (
-          pennylane_id,
-          name,
-          email,
-          phone,
-          address,
-          updated_at
-        )
-        values ($1, $2, $3, $4, $5, now())
-        on conflict (pennylane_id)
-        do update set
-          name = excluded.name,
-          email = coalesce(excluded.email, clients.email),
-          phone = coalesce(excluded.phone, clients.phone),
-          address = coalesce(excluded.address, clients.address),
-          updated_at = now()
-        `,
-        [
-          customer.id,
-          customer.name,
-          customer.email || null,
-          customer.phone || null,
-          customer.address || null,
-        ]
-      );
-
-      syncedCount += 1;
-    }
-
-    res.json({
-      ok: true,
-      syncedCount,
-      lastSyncAt: new Date().toLocaleString("fr-FR"),
-    });
-  } catch (error) {
-    errorResponse(res, error, "POST /api/pennylane/sync/customers ERROR:");
-  }
-});
-
-app.post("/api/clients", requireAdmin, async (req, res) => {
-  try {
-    const body = req.body || {};
-    const name = String(body.name || body.nom || "").trim();
-    const address = body.address ?? body.adresse ?? null;
-    const phone = body.phone ?? body.telephone ?? null;
-    const email = body.email ?? null;
-
-    if (!name) {
-      return res.status(400).json({
-        error: "name is required",
-        message: "Le nom du client est obligatoire.",
-      });
-    }
-
-    const result = await pool.query(
-      `
-      insert into clients (name, address, phone, email, created_at, updated_at)
-      values ($1, $2, $3, $4, now(), now())
-      returning
-        id,
-        name as nom,
-        name,
-        address as adresse,
-        address,
-        phone as telephone,
-        phone,
-        email,
-        null::text as commentaire,
-        pennylane_id as "pennylaneCustomerId"
-      `,
-      [name, address || null, phone || null, email || null]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    errorResponse(res, error, "POST /api/clients ERROR:");
-  }
 });
 
 app.post("/api/machines", requireAdmin, async (req, res) => {
@@ -719,26 +550,14 @@ app.patch("/api/machines/:id", requireAdmin, async (req, res) => {
     const nextStatut = body.statut ?? current.statut;
     const nextLieu = body.lieu ?? current.lieu;
     const nextCommentaire = body.commentaire ?? current.commentaire;
-    const nextPennylaneCustomerId = body.pennylaneCustomerId || null;
+    const nextCrmClientId = body.crmClientId || body.clientId || null;
 
     const clientRequiredStatuses = ["En prêt", "En location", "Vendue"];
     const statusKeepsClient = clientRequiredStatuses.includes(nextStatut);
 
-    let nextClientId = statusKeepsClient ? body.clientId || null : null;
-    const resolvedPennylaneCustomerId = statusKeepsClient
-      ? nextPennylaneCustomerId
-      : null;
+    const nextCrmClientReference = statusKeepsClient ? nextCrmClientId : null;
 
-    if (resolvedPennylaneCustomerId) {
-      const matchingClientResult = await client.query(
-        `select id from clients where pennylane_id = $1 limit 1`,
-        [String(resolvedPennylaneCustomerId)]
-      );
-
-      nextClientId = matchingClientResult.rows[0]?.id || null;
-    }
-
-    if (clientRequiredStatuses.includes(nextStatut) && !nextClientId) {
+    if (clientRequiredStatuses.includes(nextStatut) && !nextCrmClientReference) {
       await client.query("rollback");
 
       return res.status(400).json({
@@ -755,30 +574,30 @@ const updatedResult = await client.query(
   update machines
   set
     statut = $1,
-    client_id = $2,
-    lieu = $3,
-    commentaire = $4,
+    client_id = null,
+    lieu = $2,
+    commentaire = $3,
     date_maj = current_date,
     date_mise_disposition = case
       when $1 in ('En prêt', 'En location', 'Vendue') then current_date
       when $1 in ('En stock', 'En maintenance') then null
       else date_mise_disposition
     end,
-    pennylane_customer_id = $5,
-    maintenance_start_date = $6,
-    maintenance_reason = $7,
-    maintenance_action = $8,
-    maintenance_expected_return_date = $9
-  where id = $10
+    crm_client_id = $4,
+    pennylane_customer_id = null,
+    maintenance_start_date = $5,
+    maintenance_reason = $6,
+    maintenance_action = $7,
+    maintenance_expected_return_date = $8
+  where id = $9
   returning
     ${machineSelectSql()}
   `,
   [
     nextStatut,
-    nextClientId,
     nextLieu,
     nextCommentaire,
-    resolvedPennylaneCustomerId,
+    nextCrmClientReference,
     nextMaintenanceStartDate,
     nextMaintenanceReason,
     nextMaintenanceAction,
@@ -787,22 +606,10 @@ const updatedResult = await client.query(
   ]
 );
 
-    const oldClientResult = current.pennylane_customer_id
-      ? await client.query(
-          `select id, name from clients where pennylane_id = $1 limit 1`,
-          [current.pennylane_customer_id]
-        )
-      : { rows: [] };
-
-    const newClientResult = resolvedPennylaneCustomerId
-      ? await client.query(
-          `select id, name from clients where pennylane_id = $1 limit 1`,
-          [resolvedPennylaneCustomerId]
-        )
-      : { rows: [] };
-
-    const oldClientName = oldClientResult.rows[0]?.name || "Sans client";
-    const newClientName = newClientResult.rows[0]?.name || "Sans client";
+    const crmClients = await crm.clients.list();
+    const oldCrmClientId = current.crm_client_id || current.client_id?.toString() || null;
+    const oldClientName = crmClients.find((item) => String(item.id) === String(oldCrmClientId || ""))?.nom || "Sans client";
+    const newClientName = crmClients.find((item) => String(item.id) === String(nextCrmClientReference || ""))?.nom || "Sans client";
 
     const oldValues = {};
     const newValues = {};
@@ -909,13 +716,13 @@ const updatedResult = await client.query(
         getActorName(req, body.action === "Mise à jour terrain QR" ? "Terrain QR" : "Utilisateur LPB"),
         current.statut,
         nextStatut,
-        nextClientId,
+        null,
         historyComment,
         JSON.stringify(oldValues),
         JSON.stringify(newValues),
         JSON.stringify({
           source: body.action === "Mise à jour terrain QR" ? "QR" : "ADMIN",
-          pennylaneCustomerId: resolvedPennylaneCustomerId,
+          crmClientId: nextCrmClientReference,
         }),
       ]
     );

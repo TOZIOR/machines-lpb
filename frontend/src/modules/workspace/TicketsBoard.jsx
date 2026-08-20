@@ -60,6 +60,32 @@ function nextStatus(status) {
   return COLUMNS[Math.min(index + 1, COLUMNS.length - 1)]?.key || status;
 }
 
+function getClientKey(client) {
+  return String(client?.crmClientId || client?.id || client?.pennylaneCustomerId || "");
+}
+
+function machineBelongsToClient(machine, client) {
+  if (!machine || !client) return false;
+
+  const machineClientIds = [
+    machine.clientId,
+    machine.crmClientId,
+    machine.pennylaneCustomerId,
+  ]
+    .filter(Boolean)
+    .map(String);
+
+  const clientIds = [
+    client.id,
+    client.crmClientId,
+    client.pennylaneCustomerId,
+  ]
+    .filter(Boolean)
+    .map(String);
+
+  return machineClientIds.some((value) => clientIds.includes(value));
+}
+
 export default function TicketsBoard({ clients = [], machines = [], initialContext = null, onInitialContextConsumed }) {
   const [tickets, setTickets] = useState(loadTickets);
   const [query, setQuery] = useState("");
@@ -89,23 +115,23 @@ export default function TicketsBoard({ clients = [], machines = [], initialConte
       return;
     }
     const machineCode = machine.code || machine.numero || machine.numeroInterne || machine.id;
-    const client = clients.find((item) => String(item.id) === String(machine.clientId || ""));
+    const client = clients.find((item) => machineBelongsToClient(machine, item));
     setForm((current) => ({
       ...current,
       machineId: machine.id,
       machineCode: String(machineCode || ""),
-      clientId: client?.id || current.clientId || "",
+      clientId: client ? getClientKey(client) : current.clientId || "",
       clientName: client?.nom || client?.name || current.clientName || "",
     }));
   }
 
   function selectClient(clientId) {
-    const client = clients.find((item) => String(item.id) === String(clientId));
+    const client = clients.find((item) => getClientKey(item) === String(clientId));
     const selectedMachine = machines.find((item) => String(item.id) === String(form.machineId));
-    const keepMachine = selectedMachine && String(selectedMachine.clientId || "") === String(clientId);
+    const keepMachine = selectedMachine && client && machineBelongsToClient(selectedMachine, client);
     setForm((current) => ({
       ...current,
-      clientId: client?.id || "",
+      clientId: client ? getClientKey(client) : "",
       clientName: client?.nom || client?.name || "",
       machineId: keepMachine ? current.machineId : "",
       machineCode: keepMachine ? current.machineCode : "",
@@ -267,16 +293,24 @@ export default function TicketsBoard({ clients = [], machines = [], initialConte
               <Field label="Machine">
                 <select value={form.machineId} onChange={(event) => selectMachine(event.target.value)} className="h-11 w-full rounded-2xl border border-[#d8c4ad] bg-white px-4 text-sm">
                   <option value="">Sélectionner une machine</option>
-                  {machines.filter((machine) => !form.clientId || String(machine.clientId || "") === String(form.clientId)).map((machine) => {
+                  {machines.filter((machine) => {
+                    if (!form.clientId) return true;
+                    const selectedClient = clients.find((client) => getClientKey(client) === String(form.clientId));
+                    return machineBelongsToClient(machine, selectedClient);
+                  }).map((machine) => {
                     const code = machine.code || machine.numero || machine.numeroInterne || machine.id;
                     return <option key={machine.id} value={machine.id}>{code} · {machine.marque} {machine.modele}</option>;
                   })}
                 </select>
               </Field>
-              <Field label="Client">
+              <Field label="Client (CRM / Pennylane)">
                 <select value={form.clientId} onChange={(event) => selectClient(event.target.value)} className="h-11 w-full rounded-2xl border border-[#d8c4ad] bg-white px-4 text-sm">
                   <option value="">Sélectionner un client</option>
-                  {clients.map((client) => <option key={client.id} value={client.id}>{client.nom || client.name}</option>)}
+                  {clients.map((client) => (
+                    <option key={getClientKey(client)} value={getClientKey(client)}>
+                      {client.nom || client.name}{client.pennylaneCustomerId ? " · Pennylane" : ""}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="Priorité">

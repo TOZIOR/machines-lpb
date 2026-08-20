@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
 const { createCrmRouter } = require("./crm-routes");
+const { fetchCrmClients } = require("./crm-clients");
 const {
   validateMachineAssignment,
 } = require("./machine-rules");
@@ -11,6 +12,8 @@ const PORT = process.env.PORT || 3001;
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "change-me";
 const CRM_API_KEY = process.env.CRM_API_KEY || "change-me";
+const CRM_CLIENTS_URL = process.env.CRM_CLIENTS_URL || "";
+const CRM_CLIENTS_API_KEY = process.env.CRM_CLIENTS_API_KEY || CRM_API_KEY;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -117,28 +120,46 @@ app.get("/api/machines", requireAdmin, async (_req, res) => {
 
 app.get("/api/clients", requireAdmin, async (_req, res) => {
   try {
-    const result = await pool.query(`
-      select
-        id,
-        nom,
-        adresse,
-        telephone,
-        email,
-        commentaire,
-        pennylane_customer_id as "pennylaneCustomerId"
-      from clients
-      order by nom asc
-    `);
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error("GET /api/clients ERROR:", error);
-    res.status(500).json({
-      error: error.message,
-      detail: error.detail || null,
-      hint: error.hint || null,
-      code: error.code || null,
+    const crmClients = await fetchCrmClients({
+      url: CRM_CLIENTS_URL,
+      apiKey: CRM_CLIENTS_API_KEY,
     });
+
+    res.setHeader("x-lpb-client-source", "crm");
+    return res.json(crmClients);
+  } catch (crmError) {
+    console.error("GET /api/clients CRM ERROR:", crmError);
+
+    try {
+      const result = await pool.query(`
+        select
+          id,
+          nom,
+          adresse,
+          telephone,
+          email,
+          commentaire,
+          pennylane_customer_id as "pennylaneCustomerId"
+        from clients
+        order by nom asc
+      `);
+
+      res.setHeader("x-lpb-client-source", "local-fallback");
+      return res.json(
+        result.rows.map((client) => ({
+          ...client,
+          crmClientId: null,
+          source: "LOCAL_FALLBACK",
+        })),
+      );
+    } catch (localError) {
+      console.error("GET /api/clients LOCAL FALLBACK ERROR:", localError);
+      return res.status(502).json({
+        error: "Unable to load clients from CRM",
+        crmError: crmError.message,
+        localError: localError.message,
+      });
+    }
   }
 });
 
