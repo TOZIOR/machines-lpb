@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CalendarClock,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   CircleDot,
   ClipboardList,
@@ -169,6 +170,18 @@ function nextStatus(status) {
       )
     ]?.key || status
   );
+}
+
+function previousStatus(status) {
+  const index = COLUMNS.findIndex(
+    (column) => column.key === status,
+  );
+
+  if (index <= 0) {
+    return status;
+  }
+
+  return COLUMNS[index - 1]?.key || status;
 }
 
 function getStatusLabel(status) {
@@ -389,6 +402,11 @@ useEffect(() => {
     transitionTicket,
     setTransitionTicket,
   ] = useState(null);
+
+  const [
+    transitionDirection,
+    setTransitionDirection,
+  ] = useState("NEXT");
 
   const [
     transitionForm,
@@ -939,25 +957,31 @@ useEffect(() => {
     setSelectedTicket(ticket);
   }
 
-  function openTransition(ticket) {
+  function openTransition(
+    ticket,
+    direction = "NEXT",
+  ) {
     const targetStatus =
-      nextStatus(ticket.status);
+      direction === "PREVIOUS"
+        ? previousStatus(ticket.status)
+        : nextStatus(ticket.status);
 
+    setTransitionDirection(direction);
     setTransitionTicket(ticket);
 
     setTransitionForm({
       comment: "",
       plannedRepairDate:
-        targetStatus ===
-        "PLANIFIE"
-          ? ticket.plannedRepairDate ||
-            ""
+        direction === "NEXT" &&
+        targetStatus === "PLANIFIE"
+          ? ticket.plannedRepairDate || ""
           : "",
     });
   }
 
   function closeTransition() {
     setTransitionTicket(null);
+    setTransitionDirection("NEXT");
 
     setTransitionForm({
       comment: "",
@@ -985,9 +1009,12 @@ useEffect(() => {
       transitionTicket.status;
 
     const toStatus =
-      nextStatus(fromStatus);
+      transitionDirection === "PREVIOUS"
+        ? previousStatus(fromStatus)
+        : nextStatus(fromStatus);
 
     if (
+      transitionDirection === "NEXT" &&
       toStatus === "PLANIFIE" &&
       !transitionForm.plannedRepairDate
     ) {
@@ -1003,7 +1030,9 @@ useEffect(() => {
           : `${Date.now()}-transition`,
 
       type:
-        "STATUS_CHANGE",
+        transitionDirection === "PREVIOUS"
+          ? "STATUS_CHANGE_BACKWARD"
+          : "STATUS_CHANGE",
 
       createdAt:
         now.toISOString(),
@@ -1022,10 +1051,10 @@ useEffect(() => {
       toStatus,
 
       plannedRepairDate:
+        transitionDirection === "NEXT" &&
         toStatus === "PLANIFIE"
           ? transitionForm.plannedRepairDate
-          : transitionTicket.plannedRepairDate ||
-            null,
+          : transitionTicket.plannedRepairDate || null,
     };
 
     let updatedTicket = null;
@@ -1070,10 +1099,13 @@ useEffect(() => {
             toStatus,
 
           plannedRepairDate:
-            toStatus === "PLANIFIE"
-              ? transitionForm.plannedRepairDate
-              : ticket.plannedRepairDate ||
-                null,
+            transitionDirection === "PREVIOUS" &&
+            fromStatus === "PLANIFIE"
+              ? null
+              : transitionDirection === "NEXT" &&
+                  toStatus === "PLANIFIE"
+                ? transitionForm.plannedRepairDate
+                : ticket.plannedRepairDate || null,
 
           updatedAt:
             now.toISOString(),
@@ -1870,22 +1902,42 @@ useEffect(() => {
                 Supprimer
               </Button>
 
-              {selectedTicket.status !==
-              "CLOTURE" ? (
-                <Button
-                  type="button"
-                  className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
-                  onClick={() =>
-                    openTransition(
-                      selectedTicket,
-                    )
-                  }
-                >
-                  Passer à l’étape
-                  suivante
-                  <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
-              ) : null}
+              <div className="flex flex-wrap gap-2">
+                {selectedTicket.status !==
+                "NOUVEAU" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-2xl border-[#d8c4ad] text-[#5b351f]"
+                    onClick={() =>
+                      openTransition(
+                        selectedTicket,
+                        "PREVIOUS",
+                      )
+                    }
+                  >
+                    <ChevronLeft className="mr-2 h-4 w-4" />
+                    Étape précédente
+                  </Button>
+                ) : null}
+
+                {selectedTicket.status !==
+                "CLOTURE" ? (
+                  <Button
+                    type="button"
+                    className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
+                    onClick={() =>
+                      openTransition(
+                        selectedTicket,
+                        "NEXT",
+                      )
+                    }
+                  >
+                    Passer à l’étape suivante
+                    <ChevronRight className="ml-2 h-4 w-4" />
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </div>
         </Modal>
@@ -1893,10 +1945,18 @@ useEffect(() => {
 
       {transitionTicket ? (
         <Modal
-          title={`Passer à l’étape « ${getStatusLabel(
-            nextStatus(
-              transitionTicket.status,
-            ),
+          title={`${
+            transitionDirection === "PREVIOUS"
+              ? "Revenir à"
+              : "Passer à"
+          } l’étape « ${getStatusLabel(
+            transitionDirection === "PREVIOUS"
+              ? previousStatus(
+                  transitionTicket.status,
+                )
+              : nextStatus(
+                  transitionTicket.status,
+                ),
           )} »`}
           onClose={closeTransition}
         >
@@ -1917,14 +1977,19 @@ useEffect(() => {
                 )}
                 {" → "}
                 {getStatusLabel(
-                  nextStatus(
-                    transitionTicket.status,
-                  ),
+                  transitionDirection === "PREVIOUS"
+                    ? previousStatus(
+                        transitionTicket.status,
+                      )
+                    : nextStatus(
+                        transitionTicket.status,
+                      ),
                 )}
               </div>
             </div>
 
-            {nextStatus(
+            {transitionDirection === "NEXT" &&
+            nextStatus(
               transitionTicket.status,
             ) === "PLANIFIE" ? (
               <Field label="Date prévue de réparation *">
@@ -1955,7 +2020,13 @@ useEffect(() => {
               </Field>
             ) : null}
 
-            <Field label="Commentaire / motif du changement *">
+            <Field
+              label={
+                transitionDirection === "PREVIOUS"
+                  ? "Commentaire / motif du retour *"
+                  : "Commentaire / motif du changement *"
+              }
+            >
               <Textarea
                 value={
                   transitionForm.comment
@@ -1969,7 +2040,11 @@ useEffect(() => {
                     }),
                   )
                 }
-                placeholder="Expliquer pourquoi le ticket passe à l’étape suivante..."
+                placeholder={
+                  transitionDirection === "PREVIOUS"
+                    ? "Expliquer pourquoi le ticket revient à l’étape précédente..."
+                    : "Expliquer pourquoi le ticket passe à l’étape suivante..."
+                }
                 rows={4}
                 required
               />
@@ -1991,7 +2066,9 @@ useEffect(() => {
                 type="submit"
                 className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
               >
-                Valider le changement
+                {transitionDirection === "PREVIOUS"
+                  ? "Valider le retour"
+                  : "Valider le changement"}
               </Button>
             </div>
           </form>
