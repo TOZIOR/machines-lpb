@@ -366,6 +366,25 @@ export default function TicketsBoard({
     setSelectedTicket,
   ] = useState(null);
 
+useEffect(() => {
+  if (!selectedTicket?.id) {
+    return;
+  }
+
+  const refreshedTicket = tickets.find(
+    (ticket) => ticket.id === selectedTicket.id,
+  );
+
+  if (!refreshedTicket) {
+    setSelectedTicket(null);
+    return;
+  }
+
+  if (refreshedTicket !== selectedTicket) {
+    setSelectedTicket(refreshedTicket);
+  }
+}, [tickets, selectedTicket?.id]);
+
   const [
     transitionTicket,
     setTransitionTicket,
@@ -1023,10 +1042,6 @@ export default function TicketsBoard({
         updatedTicket = {
           ...ticket,
 
-          /*
-           * On conserve explicitement
-           * toutes les informations métier.
-           */
           machineId:
             ticket.machineId || null,
 
@@ -1072,12 +1087,6 @@ export default function TicketsBoard({
         return updatedTicket;
       }),
     );
-
-    if (updatedTicket) {
-      setSelectedTicket(
-        updatedTicket,
-      );
-    }
 
     closeTransition();
   }
@@ -1159,11 +1168,6 @@ export default function TicketsBoard({
       }),
     );
 
-    if (updatedTicket) {
-      setSelectedTicket(
-        updatedTicket,
-      );
-    }
   }
 
   function deleteTicket(ticketId) {
