@@ -14,6 +14,13 @@ const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "change-me";
 const CRM_API_KEY = process.env.CRM_API_KEY || "change-me";
 const CRM_CLIENTS_URL = process.env.CRM_CLIENTS_URL || "";
 const CRM_CLIENTS_API_KEY = process.env.CRM_CLIENTS_API_KEY || CRM_API_KEY;
+console.log("CRM CONFIG", {
+  hasCrmClientsUrl: Boolean(CRM_CLIENTS_URL),
+  crmClientsUrl: CRM_CLIENTS_URL || "(not configured)",
+  hasCrmClientsApiKey: Boolean(CRM_CLIENTS_API_KEY),
+  crmClientsApiKeyLength: CRM_CLIENTS_API_KEY?.length || 0,
+  usingDedicatedCrmClientsApiKey: Boolean(process.env.CRM_CLIENTS_API_KEY),
+});
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
