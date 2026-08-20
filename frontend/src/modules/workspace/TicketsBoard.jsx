@@ -31,8 +31,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-const STORAGE_KEY = "lpb-machines-sav-tickets-v1";
-
 const API_BASE_URL = String(
   import.meta.env.VITE_API_BASE_URL || "/api",
 ).replace(/\/+$/, "");
@@ -102,6 +100,16 @@ const QUOTE_STATUSES = [
 function normalizeTicket(ticket) {
   return {
     ...ticket,
+    clientId:
+      ticket.clientId ||
+      ticket.crmClientId ||
+      null,
+    crmClientId:
+      ticket.crmClientId ||
+      ticket.clientId ||
+      null,
+    technician:
+      ticket.technician || "",
     history: Array.isArray(ticket.history)
       ? ticket.history
       : [],
@@ -110,35 +118,6 @@ function normalizeTicket(ticket) {
     plannedRepairDate:
       ticket.plannedRepairDate || null,
   };
-}
-
-function loadTickets() {
-  try {
-    const raw =
-      localStorage.getItem(STORAGE_KEY);
-
-    if (!raw) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw);
-
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.map(normalizeTicket);
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
-    return [];
-  }
-}
-
-function saveTickets(tickets) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify(tickets),
-  );
 }
 
 function priorityClasses(priority) {
@@ -289,6 +268,123 @@ function formatDateTime(value) {
   }
 }
 
+async function savApiRequest(
+  path,
+  {
+    method = "GET",
+    body,
+  } = {},
+) {
+  const response = await fetch(
+    `${API_BASE_URL}${path}`,
+    {
+      method,
+      headers: {
+        Accept: "application/json",
+        ...(ADMIN_API_KEY
+          ? {
+              "x-api-key":
+                ADMIN_API_KEY,
+            }
+          : {}),
+        ...(body !== undefined
+          ? {
+              "Content-Type":
+                "application/json",
+            }
+          : {}),
+      },
+      ...(body !== undefined
+        ? {
+            body: JSON.stringify(body),
+          }
+        : {}),
+    },
+  );
+
+  const raw =
+    await response.text();
+
+  let payload = null;
+
+  if (raw) {
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = raw;
+    }
+  }
+
+  if (!response.ok) {
+    const message =
+      payload?.message ||
+      payload?.error ||
+      `Erreur API ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return payload;
+}
+
+async function loadSavTickets() {
+  const payload =
+    await savApiRequest(
+      "/sav/tickets",
+    );
+
+  return Array.isArray(payload)
+    ? payload.map(normalizeTicket)
+    : [];
+}
+
+async function loadSavTicket(ticketId) {
+  const payload =
+    await savApiRequest(
+      `/sav/tickets/${encodeURIComponent(
+        ticketId,
+      )}`,
+    );
+
+  return normalizeTicket(payload);
+}
+
+async function createSavTicket(payload) {
+  return savApiRequest(
+    "/sav/tickets",
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+}
+
+async function patchSavTicket(
+  ticketId,
+  payload,
+) {
+  return savApiRequest(
+    `/sav/tickets/${encodeURIComponent(
+      ticketId,
+    )}`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+async function deleteSavTicket(ticketId) {
+  return savApiRequest(
+    `/sav/tickets/${encodeURIComponent(
+      ticketId,
+    )}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
 async function searchCrmClients(search) {
   const params =
     new URLSearchParams();
@@ -364,7 +460,17 @@ export default function TicketsBoard({
   onInitialContextConsumed,
 }) {
   const [tickets, setTickets] =
-    useState(loadTickets);
+    useState([]);
+
+  const [
+    ticketsLoading,
+    setTicketsLoading,
+  ] = useState(true);
+
+  const [
+    ticketsError,
+    setTicketsError,
+  ] = useState("");
 
   const [query, setQuery] =
     useState("");
@@ -379,24 +485,78 @@ export default function TicketsBoard({
     setSelectedTicket,
   ] = useState(null);
 
-useEffect(() => {
-  if (!selectedTicket?.id) {
-    return;
-  }
+  useEffect(() => {
+    let active = true;
 
-  const refreshedTicket = tickets.find(
-    (ticket) => ticket.id === selectedTicket.id,
-  );
+    async function refreshTickets() {
+      try {
+        setTicketsLoading(true);
+        setTicketsError("");
 
-  if (!refreshedTicket) {
-    setSelectedTicket(null);
-    return;
-  }
+        const loaded =
+          await loadSavTickets();
 
-  if (refreshedTicket !== selectedTicket) {
-    setSelectedTicket(refreshedTicket);
-  }
-}, [tickets, selectedTicket?.id]);
+        if (active) {
+          setTickets(loaded);
+        }
+      } catch (error) {
+        console.error(
+          "SAV TICKETS LOAD ERROR",
+          error,
+        );
+
+        if (active) {
+          setTicketsError(
+            error?.message ||
+              "Impossible de charger les tickets SAV.",
+          );
+        }
+      } finally {
+        if (active) {
+          setTicketsLoading(false);
+        }
+      }
+    }
+
+    refreshTickets();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTicket?.id) {
+      return;
+    }
+
+    const refreshedTicket =
+      tickets.find(
+        (ticket) =>
+          ticket.id ===
+          selectedTicket.id,
+      );
+
+    if (!refreshedTicket) {
+      setSelectedTicket(null);
+      return;
+    }
+
+    setSelectedTicket(
+      (current) =>
+        current
+          ? {
+              ...current,
+              ...refreshedTicket,
+              history:
+                current.history || [],
+            }
+          : current,
+    );
+  }, [
+    tickets,
+    selectedTicket?.id,
+  ]);
 
   const [
     transitionTicket,
@@ -582,46 +742,66 @@ useEffect(() => {
     form.clientName,
   ]);
 
-  function updateTickets(updater) {
+  function replaceTicketInList(
+    updatedTicket,
+  ) {
+    const normalized =
+      normalizeTicket(
+        updatedTicket,
+      );
+
     setTickets((current) => {
-      const updated =
-        typeof updater === "function"
-          ? updater(current)
-          : updater;
+      const exists =
+        current.some(
+          (ticket) =>
+            ticket.id ===
+            normalized.id,
+        );
 
-      saveTickets(updated);
+      if (!exists) {
+        return [
+          normalized,
+          ...current,
+        ];
+      }
 
-      return updated;
+      return current.map(
+        (ticket) =>
+          ticket.id ===
+          normalized.id
+            ? normalized
+            : ticket,
+      );
     });
+
+    return normalized;
   }
 
-  function updateSingleTicket(
-    ticketId,
-    updater,
-  ) {
-    let updatedTicket = null;
+  async function openTicket(ticket) {
+    setSelectedTicket(ticket);
 
-    updateTickets((current) =>
-      current.map((ticket) => {
-        if (
-          ticket.id !== ticketId
-        ) {
-          return ticket;
-        }
+    try {
+      const detailed =
+        await loadSavTicket(
+          ticket.id,
+        );
 
-        updatedTicket =
-          typeof updater ===
-          "function"
-            ? updater(ticket)
-            : updater;
+      replaceTicketInList(
+        detailed,
+      );
 
-        return updatedTicket;
-      }),
-    );
-
-    if (updatedTicket) {
       setSelectedTicket(
-        updatedTicket,
+        detailed,
+      );
+    } catch (error) {
+      console.error(
+        "SAV TICKET DETAIL ERROR",
+        error,
+      );
+
+      window.alert(
+        error?.message ||
+          "Impossible de charger le détail du ticket SAV.",
       );
     }
   }
@@ -835,126 +1015,96 @@ useEffect(() => {
     [tickets],
   );
 
-  function createTicket(event) {
+  async function createTicket(event) {
     event.preventDefault();
 
     if (!form.title.trim()) {
       return;
     }
 
-    const now = new Date();
-
-    const ticket = {
-      id:
-        crypto.randomUUID
-          ? crypto.randomUUID()
-          : String(Date.now()),
-
-      reference:
-        `SAV-${now.getFullYear()}-${String(
-          tickets.length + 1,
-        ).padStart(4, "0")}`,
-
-      title:
-        form.title.trim(),
-
-      machineId:
-        form.machineId || null,
-
-      machineCode:
-        form.machineCode.trim(),
-
-      clientId:
-        form.clientId || null,
-
-      crmClientId:
-        form.clientId || null,
-
-      pennylaneCustomerId:
-        form.pennylaneCustomerId ||
-        null,
-
-      clientName:
-        form.clientName.trim(),
-
-      priority:
-        form.priority,
-
-      description:
-        form.description.trim(),
-
-      technician:
-        form.technician.trim(),
-
-      desiredDate:
-        form.desiredDate || null,
-
-      plannedRepairDate: null,
-
-      quoteStatus: "A_FAIRE",
-
-      status: "NOUVEAU",
-
-      createdAt:
-        now.toISOString(),
-
-      updatedAt:
-        now.toISOString(),
-
-      history: [
-        {
-          id:
-            crypto.randomUUID
-              ? crypto.randomUUID()
-              : `${Date.now()}-creation`,
-
-          type: "CREATION",
-
-          createdAt:
-            now.toISOString(),
-
-          label:
-            "Ouverture du ticket",
-
+    try {
+      const created =
+        await createSavTicket({
+          title:
+            form.title.trim(),
+          machineId:
+            form.machineId ||
+            null,
+          machineCode:
+            form.machineCode.trim() ||
+            null,
+          crmClientId:
+            form.clientId ||
+            null,
+          pennylaneCustomerId:
+            form.pennylaneCustomerId ||
+            null,
+          clientName:
+            form.clientName.trim() ||
+            null,
+          priority:
+            form.priority,
+          description:
+            form.description.trim() ||
+            null,
+          technician:
+            form.technician.trim() ||
+            null,
+          desiredDate:
+            form.desiredDate ||
+            null,
+          status:
+            "NOUVEAU",
+          quoteStatus:
+            "A_FAIRE",
           comment:
             form.description.trim() ||
             "Ticket SAV créé.",
+        });
 
-          fromStatus: null,
+      const detailed =
+        await loadSavTicket(
+          created.id,
+        );
 
-          toStatus:
-            "NOUVEAU",
-        },
-      ],
-    };
+      replaceTicketInList(
+        detailed,
+      );
 
-    updateTickets((current) => [
-      ticket,
-      ...current,
-    ]);
+      setForm({
+        title: "",
+        machineCode: "",
+        clientName: "",
+        priority: "NORMALE",
+        description: "",
+        technician: "",
+        machineId: "",
+        clientId: "",
+        pennylaneCustomerId: "",
+        desiredDate: "",
+      });
 
-    setForm({
-      title: "",
-      machineCode: "",
-      clientName: "",
-      priority: "NORMALE",
-      description: "",
-      technician: "",
-      machineId: "",
-      clientId: "",
-      pennylaneCustomerId: "",
-      desiredDate: "",
-    });
+      setClientSearch("");
+      setClientResults([]);
+      setClientSearchOpen(false);
+      setShowForm(false);
 
-    setClientSearch("");
-    setClientResults([]);
-    setClientSearchOpen(false);
+      onInitialContextConsumed?.();
 
-    setShowForm(false);
+      setSelectedTicket(
+        detailed,
+      );
+    } catch (error) {
+      console.error(
+        "CREATE SAV TICKET ERROR",
+        error,
+      );
 
-    onInitialContextConsumed?.();
-
-    setSelectedTicket(ticket);
+      window.alert(
+        error?.message ||
+          "Impossible de créer le ticket SAV.",
+      );
+    }
   }
 
   function openTransition(
@@ -989,7 +1139,7 @@ useEffect(() => {
     });
   }
 
-  function confirmTransition(
+  async function confirmTransition(
     event,
   ) {
     event.preventDefault();
@@ -1009,200 +1159,156 @@ useEffect(() => {
       transitionTicket.status;
 
     const toStatus =
-      transitionDirection === "PREVIOUS"
-        ? previousStatus(fromStatus)
-        : nextStatus(fromStatus);
+      transitionDirection ===
+      "PREVIOUS"
+        ? previousStatus(
+            fromStatus,
+          )
+        : nextStatus(
+            fromStatus,
+          );
 
     if (
-      transitionDirection === "NEXT" &&
+      transitionDirection ===
+        "NEXT" &&
       toStatus === "PLANIFIE" &&
       !transitionForm.plannedRepairDate
     ) {
       return;
     }
 
-    const now = new Date();
-
-    const transitionEvent = {
-      id:
-        crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${Date.now()}-transition`,
-
-      type:
-        transitionDirection === "PREVIOUS"
-          ? "STATUS_CHANGE_BACKWARD"
-          : "STATUS_CHANGE",
-
-      createdAt:
-        now.toISOString(),
-
+    const payload = {
+      status: toStatus,
+      comment,
       label:
         `${getStatusLabel(
           fromStatus,
         )} → ${getStatusLabel(
           toStatus,
         )}`,
-
-      comment,
-
-      fromStatus,
-
-      toStatus,
-
-      plannedRepairDate:
-        transitionDirection === "NEXT" &&
-        toStatus === "PLANIFIE"
-          ? transitionForm.plannedRepairDate
-          : transitionTicket.plannedRepairDate || null,
+      eventType:
+        transitionDirection ===
+        "PREVIOUS"
+          ? "STATUS_CHANGE_BACKWARD"
+          : "STATUS_CHANGE",
+      direction:
+        transitionDirection,
     };
 
-    let updatedTicket = null;
+    if (
+      transitionDirection ===
+        "NEXT" &&
+      toStatus === "PLANIFIE"
+    ) {
+      payload.plannedRepairDate =
+        transitionForm.plannedRepairDate;
+    }
 
-    updateTickets((current) =>
-      current.map((ticket) => {
-        if (
-          ticket.id !==
-          transitionTicket.id
-        ) {
-          return ticket;
-        }
+    if (
+      transitionDirection ===
+        "PREVIOUS" &&
+      fromStatus === "PLANIFIE"
+    ) {
+      payload.plannedRepairDate =
+        null;
+    }
 
-        updatedTicket = {
-          ...ticket,
+    try {
+      await patchSavTicket(
+        transitionTicket.id,
+        payload,
+      );
 
-          machineId:
-            ticket.machineId || null,
+      const detailed =
+        await loadSavTicket(
+          transitionTicket.id,
+        );
 
-          machineCode:
-            ticket.machineCode || "",
+      replaceTicketInList(
+        detailed,
+      );
 
-          clientId:
-            ticket.clientId || null,
+      setSelectedTicket(
+        detailed,
+      );
 
-          crmClientId:
-            ticket.crmClientId ||
-            ticket.clientId ||
-            null,
+      closeTransition();
+    } catch (error) {
+      console.error(
+        "SAV STATUS UPDATE ERROR",
+        error,
+      );
 
-          pennylaneCustomerId:
-            ticket.pennylaneCustomerId ||
-            null,
-
-          clientName:
-            ticket.clientName || "",
-
-          technician:
-            ticket.technician || "",
-
-          status:
-            toStatus,
-
-          plannedRepairDate:
-            transitionDirection === "PREVIOUS" &&
-            fromStatus === "PLANIFIE"
-              ? null
-              : transitionDirection === "NEXT" &&
-                  toStatus === "PLANIFIE"
-                ? transitionForm.plannedRepairDate
-                : ticket.plannedRepairDate || null,
-
-          updatedAt:
-            now.toISOString(),
-
-          history: [
-            ...(ticket.history || []),
-            transitionEvent,
-          ],
-        };
-
-        return updatedTicket;
-      }),
-    );
-
-    closeTransition();
+      window.alert(
+        error?.message ||
+          "Impossible de changer l'étape du ticket SAV.",
+      );
+    }
   }
 
-  function updateQuoteStatus(
+  async function updateQuoteStatus(
     ticketId,
     quoteStatus,
   ) {
-    const now = new Date();
+    const currentTicket =
+      tickets.find(
+        (ticket) =>
+          ticket.id === ticketId,
+      ) || selectedTicket;
 
-    let updatedTicket = null;
+    const previousStatus =
+      currentTicket?.quoteStatus ||
+      "A_FAIRE";
 
-    updateTickets((current) =>
-      current.map((ticket) => {
-        if (
-          ticket.id !== ticketId
-        ) {
-          return ticket;
-        }
+    if (
+      previousStatus ===
+      quoteStatus
+    ) {
+      return;
+    }
 
-        const previousStatus =
-          ticket.quoteStatus ||
-          "A_FAIRE";
-
-        if (
-          previousStatus ===
-          quoteStatus
-        ) {
-          updatedTicket =
-            ticket;
-
-          return ticket;
-        }
-
-        const historyEvent = {
-          id:
-            crypto.randomUUID
-              ? crypto.randomUUID()
-              : `${Date.now()}-quote`,
-
-          type:
-            "QUOTE_STATUS",
-
-          createdAt:
-            now.toISOString(),
-
-          label:
-            "Mise à jour devis Pennylane",
-
-          comment:
+    try {
+      await patchSavTicket(
+        ticketId,
+        {
+          quoteStatus,
+          quoteComment:
             `${getQuoteStatusLabel(
               previousStatus,
             )} → ${getQuoteStatusLabel(
               quoteStatus,
             )}`,
+        },
+      );
 
-          fromQuoteStatus:
-            previousStatus,
+      const detailed =
+        await loadSavTicket(
+          ticketId,
+        );
 
-          toQuoteStatus:
-            quoteStatus,
-        };
+      replaceTicketInList(
+        detailed,
+      );
 
-        updatedTicket = {
-          ...ticket,
+      setSelectedTicket(
+        detailed,
+      );
+    } catch (error) {
+      console.error(
+        "SAV QUOTE UPDATE ERROR",
+        error,
+      );
 
-          quoteStatus,
-
-          updatedAt:
-            now.toISOString(),
-
-          history: [
-            ...(ticket.history || []),
-            historyEvent,
-          ],
-        };
-
-        return updatedTicket;
-      }),
-    );
-
+      window.alert(
+        error?.message ||
+          "Impossible de modifier l'état du devis.",
+      );
+    }
   }
 
-  function deleteTicket(ticketId) {
+  async function deleteTicket(
+    ticketId,
+  ) {
     if (
       !window.confirm(
         "Supprimer définitivement ce ticket SAV ?",
@@ -1211,14 +1317,31 @@ useEffect(() => {
       return;
     }
 
-    updateTickets((current) =>
-      current.filter(
-        (ticket) =>
-          ticket.id !== ticketId,
-      ),
-    );
+    try {
+      await deleteSavTicket(
+        ticketId,
+      );
 
-    setSelectedTicket(null);
+      setTickets((current) =>
+        current.filter(
+          (ticket) =>
+            ticket.id !==
+            ticketId,
+        ),
+      );
+
+      setSelectedTicket(null);
+    } catch (error) {
+      console.error(
+        "DELETE SAV TICKET ERROR",
+        error,
+      );
+
+      window.alert(
+        error?.message ||
+          "Impossible de supprimer le ticket SAV.",
+      );
+    }
   }
 
   return (
@@ -1295,6 +1418,18 @@ useEffect(() => {
         />
       </div>
 
+      {ticketsLoading ? (
+        <div className="rounded-2xl border border-[#d8c4ad] bg-white px-4 py-3 text-sm text-[#7a5f4b]">
+          Chargement des tickets SAV...
+        </div>
+      ) : null}
+
+      {ticketsError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {ticketsError}
+        </div>
+      ) : null}
+
       <div className="overflow-x-auto pb-3">
         <div className="grid min-w-[1500px] grid-cols-6 gap-3">
           {COLUMNS.map(
@@ -1337,7 +1472,7 @@ useEffect(() => {
                           key={ticket.id}
                           type="button"
                           onClick={() =>
-                            setSelectedTicket(
+                            openTicket(
                               ticket,
                             )
                           }
