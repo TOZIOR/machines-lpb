@@ -331,63 +331,195 @@ function handleLogout() {
   const [actionPennylaneCustomerId, setActionPennylaneCustomerId] = useState("");
 
 
-  async function loadAllData() {
-    try {
-      setErrorMessage("");
-      setIsLoading(true);
+ async function loadAllData() {
+  try {
+    setErrorMessage("");
+    setIsLoading(true);
 
-      if (routeInfo.isMachineRoute) {
-        const [machineData, historyData, clientsData] = await Promise.all([
-          publicApiFetch(`/public/machines/${routeInfo.machineCode}`),
-          publicApiFetch(`/public/machines/${routeInfo.machineCode}/movements`),
-          apiFetch("/clients"),
-        ]);
-
-        setMachines([machineData]);
-        setMovements(historyData);
-        setClients(clientsData);
-        setSelectedMachineId(getMachineApiId(machineData));
-        return;
-      }
-
-      const [
-        machinesData,
-        clientsData,
-        pennylaneStatusData,
-        pennylaneCustomersData,
-        pennylaneProductsData,
-        pennylaneInvoicesData,
-      ] = await Promise.all([
-        apiFetch("/machines"),
-        apiFetch("/clients"),
-        apiFetch("/pennylane/status"),
-        apiFetch("/pennylane/customers"),
-        apiFetch("/pennylane/products"),
-        apiFetch("/pennylane/invoices"),
+    // =========================================================
+    // PAGE PUBLIQUE MACHINE
+    // =========================================================
+    if (routeInfo.isMachineRoute) {
+      const [machineData, historyData] = await Promise.all([
+        publicApiFetch(`/public/machines/${routeInfo.machineCode}`),
+        publicApiFetch(`/public/machines/${routeInfo.machineCode}/movements`),
       ]);
 
-      setMachines(machinesData);
-      setClients(clientsData);
-      setPennylaneStatus(pennylaneStatusData);
-      setPennylaneCustomers(pennylaneCustomersData);
-      setPennylaneProducts(pennylaneProductsData);
-      setPennylaneInvoices(pennylaneInvoicesData);
+      setMachines([machineData]);
+      setMovements(historyData);
+      setSelectedMachineId(getMachineApiId(machineData));
 
-      const idToSelect = getMachineApiId(machinesData[0]) || "";
+      // Les clients ne doivent jamais bloquer la page publique.
+      try {
+        const clientsData = await apiFetch("/clients");
+        setClients(Array.isArray(clientsData) ? clientsData : []);
+      } catch (error) {
+        console.error("CLIENTS LOAD ERROR", error);
+        setClients([]);
+      }
 
-      if (idToSelect) {
-        setSelectedMachineId(idToSelect);
-        setMovements(await apiFetch(`/machines/${idToSelect}/movements`));
-      } else {
+      return;
+    }
+
+    // =========================================================
+    // DONNEES PRINCIPALES LPB MACHINES
+    // Machines et clients doivent fonctionner indépendamment
+    // de Pennylane.
+    // =========================================================
+
+    const [machinesResult, clientsResult] = await Promise.allSettled([
+      apiFetch("/machines"),
+      apiFetch("/clients"),
+    ]);
+
+    const machinesData =
+      machinesResult.status === "fulfilled" &&
+      Array.isArray(machinesResult.value)
+        ? machinesResult.value
+        : [];
+
+    const clientsData =
+      clientsResult.status === "fulfilled" &&
+      Array.isArray(clientsResult.value)
+        ? clientsResult.value
+        : [];
+
+    setMachines(machinesData);
+    setClients(clientsData);
+
+    console.log("LPB MACHINES - machines chargées :", machinesData.length);
+    console.log("LPB MACHINES - clients chargés :", clientsData.length);
+    console.log("LPB MACHINES - clients :", clientsData);
+
+    if (machinesResult.status === "rejected") {
+      console.error(
+        "MACHINES LOAD ERROR",
+        machinesResult.reason
+      );
+    }
+
+    if (clientsResult.status === "rejected") {
+      console.error(
+        "CLIENTS LOAD ERROR",
+        clientsResult.reason
+      );
+    }
+
+    // =========================================================
+    // PENNYLANE
+    // Ces appels sont secondaires et ne doivent jamais empêcher
+    // l'affichage des machines ou des clients CRM.
+    // =========================================================
+
+    const [
+      pennylaneStatusResult,
+      pennylaneCustomersResult,
+      pennylaneProductsResult,
+      pennylaneInvoicesResult,
+    ] = await Promise.allSettled([
+      apiFetch("/pennylane/status"),
+      apiFetch("/pennylane/customers"),
+      apiFetch("/pennylane/products"),
+      apiFetch("/pennylane/invoices"),
+    ]);
+
+    if (pennylaneStatusResult.status === "fulfilled") {
+      setPennylaneStatus(pennylaneStatusResult.value || {
+        connected: false,
+        lastSyncAt: "",
+      });
+    } else {
+      console.error(
+        "PENNYLANE STATUS ERROR",
+        pennylaneStatusResult.reason
+      );
+      setPennylaneStatus({
+        connected: false,
+        lastSyncAt: "",
+      });
+    }
+
+    if (pennylaneCustomersResult.status === "fulfilled") {
+      setPennylaneCustomers(
+        Array.isArray(pennylaneCustomersResult.value)
+          ? pennylaneCustomersResult.value
+          : []
+      );
+    } else {
+      console.error(
+        "PENNYLANE CUSTOMERS ERROR",
+        pennylaneCustomersResult.reason
+      );
+      setPennylaneCustomers([]);
+    }
+
+    if (pennylaneProductsResult.status === "fulfilled") {
+      setPennylaneProducts(
+        Array.isArray(pennylaneProductsResult.value)
+          ? pennylaneProductsResult.value
+          : []
+      );
+    } else {
+      console.error(
+        "PENNYLANE PRODUCTS ERROR",
+        pennylaneProductsResult.reason
+      );
+      setPennylaneProducts([]);
+    }
+
+    if (pennylaneInvoicesResult.status === "fulfilled") {
+      setPennylaneInvoices(
+        Array.isArray(pennylaneInvoicesResult.value)
+          ? pennylaneInvoicesResult.value
+          : []
+      );
+    } else {
+      console.error(
+        "PENNYLANE INVOICES ERROR",
+        pennylaneInvoicesResult.reason
+      );
+      setPennylaneInvoices([]);
+    }
+
+    // =========================================================
+    // SELECTION DE LA PREMIERE MACHINE
+    // =========================================================
+
+    const firstMachine = machinesData[0] || null;
+    const idToSelect = firstMachine
+      ? getMachineApiId(firstMachine)
+      : "";
+
+    if (idToSelect) {
+      setSelectedMachineId(idToSelect);
+
+      try {
+        const movementsData = await apiFetch(
+          `/machines/${idToSelect}/movements`
+        );
+
+        setMovements(
+          Array.isArray(movementsData)
+            ? movementsData
+            : []
+        );
+      } catch (error) {
+        console.error("MOVEMENTS LOAD ERROR", error);
         setMovements([]);
       }
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error.message);
-    } finally {
-      setIsLoading(false);
+    } else {
+      setSelectedMachineId("");
+      setMovements([]);
     }
+  } catch (error) {
+    console.error("LOAD ALL DATA ERROR", error);
+    setErrorMessage(
+      error?.message || "Erreur lors du chargement des données."
+    );
+  } finally {
+    setIsLoading(false);
   }
+}
 
   useEffect(() => {
     loadAllData();
