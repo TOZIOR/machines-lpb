@@ -16,11 +16,17 @@ import {
 
   MapPin,
 
+  Pencil,
+
   RefreshCw,
+
+  Save,
 
   UserRound,
 
   Wrench,
+
+  X,
 
 } from "lucide-react";
 
@@ -44,6 +50,8 @@ import { Button } from "@/components/ui/button";
 
 import { Badge } from "@/components/ui/badge";
 
+import { Input } from "@/components/ui/input";
+
  
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -61,6 +69,26 @@ const END_HOUR = 18;
 const HOUR_HEIGHT = 72;
 
 const MIN_EVENT_HEIGHT = 42;
+
+ 
+
+const DURATION_OPTIONS = [
+
+  { value: 30, label: "30 min" },
+
+  { value: 45, label: "45 min" },
+
+  { value: 60, label: "1 h" },
+
+  { value: 90, label: "1 h 30" },
+
+  { value: 120, label: "2 h" },
+
+  { value: 180, label: "3 h" },
+
+  { value: 240, label: "4 h" },
+
+];
 
  
 
@@ -314,9 +342,11 @@ function priorityClasses(priority) {
 
  
 
-async function planningApiFetch(path) {
+async function planningApiRequest(path, { method = "GET", body } = {}) {
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
+
+    method,
 
     headers: {
 
@@ -324,7 +354,11 @@ async function planningApiFetch(path) {
 
       "x-api-key": ADMIN_API_KEY,
 
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+
     },
+
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
 
   });
 
@@ -354,11 +388,15 @@ async function planningApiFetch(path) {
 
   if (!response.ok) {
 
-    throw new Error(
+    const error = new Error(
 
       payload?.message || payload?.error || `Erreur API ${response.status}`,
 
     );
+
+    error.statusCode = response.status;
+
+    throw error;
 
   }
 
@@ -372,7 +410,7 @@ async function planningApiFetch(path) {
 
 async function loadTechnicians() {
 
-  return planningApiFetch("/sav/technicians");
+  return planningApiRequest("/sav/technicians");
 
 }
 
@@ -396,13 +434,9 @@ function eventPosition(entry) {
 
   const visibleEndMinutes = END_HOUR * 60;
 
- 
-
   const rawStart = minutesFromMidnight(start);
 
   const rawEnd = Math.max(minutesFromMidnight(end), rawStart + 30);
-
- 
 
   const clippedStart = Math.max(rawStart, visibleStartMinutes);
 
@@ -476,6 +510,96 @@ function addConflictFlags(entries) {
 
  
 
+function localDateValue(value) {
+
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getFullYear();
+
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+
+}
+
+ 
+
+function localTimeValue(value) {
+
+  if (!value) return "09:00";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "09:00";
+
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+
+    date.getMinutes(),
+
+  ).padStart(2, "0")}`;
+
+}
+
+ 
+
+function durationFromIntervention(intervention) {
+
+  if (!intervention?.scheduledStart || !intervention?.scheduledEnd) return 60;
+
+  const start = new Date(intervention.scheduledStart).getTime();
+
+  const end = new Date(intervention.scheduledEnd).getTime();
+
+  const minutes = Math.round((end - start) / 60000);
+
+  return minutes > 0 ? minutes : 60;
+
+}
+
+ 
+
+function buildScheduledTimes(date, time, durationMinutes) {
+
+  const start = new Date(`${date}T${time}:00`);
+
+  if (Number.isNaN(start.getTime())) {
+
+    throw new Error("La date ou l'heure est invalide.");
+
+  }
+
+ 
+
+  const duration = Number(durationMinutes);
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+
+    throw new Error("La durée est invalide.");
+
+  }
+
+ 
+
+  const end = new Date(start.getTime() + duration * 60000);
+
+  return {
+
+    scheduledStart: start.toISOString(),
+
+    scheduledEnd: end.toISOString(),
+
+  };
+
+}
+
+ 
+
 function AgendaEvent({ intervention, onClick }) {
 
   const position = eventPosition(intervention);
@@ -502,13 +626,7 @@ function AgendaEvent({ intervention, onClick }) {
 
       }`}
 
-      style={{
-
-        top: `${position.top}px`,
-
-        height: `${position.height}px`,
-
-      }}
+      style={{ top: `${position.top}px`, height: `${position.height}px` }}
 
       title={`${formatHour(intervention.scheduledStart)} - ${formatHour(
 
@@ -542,15 +660,11 @@ function AgendaEvent({ intervention, onClick }) {
 
       </div>
 
- 
-
       <div className="mt-0.5 truncate text-[11px] text-[#7a5f4b]">
 
         {intervention.machineCode || "Machine non renseignée"}
 
       </div>
-
- 
 
       <div className="mt-0.5 truncate text-[11px] font-semibold text-[#2d1b12]">
 
@@ -630,13 +744,7 @@ function InterventionCard({ intervention, onClick }) {
 
         </div>
 
-        <Badge
-
-          variant="outline"
-
-          className={priorityClasses(intervention.ticketPriority)}
-
-        >
+        <Badge variant="outline" className={priorityClasses(intervention.ticketPriority)}>
 
           {priorityLabel(intervention.ticketPriority)}
 
@@ -668,9 +776,161 @@ function InterventionCard({ intervention, onClick }) {
 
  
 
-function InterventionDetail({ intervention, onClose }) {
+function InterventionModal({
+
+  intervention,
+
+  technicians,
+
+  onClose,
+
+  onSaved,
+
+}) {
+
+  const [editMode, setEditMode] = useState(false);
+
+  const [saving, setSaving] = useState(false);
+
+  const [saveError, setSaveError] = useState("");
+
+  const [form, setForm] = useState({
+
+    technicianId: "",
+
+    date: "",
+
+    time: "09:00",
+
+    durationMinutes: "60",
+
+  });
+
+ 
+
+  useEffect(() => {
+
+    if (!intervention) return;
+
+    setEditMode(false);
+
+    setSaveError("");
+
+    setForm({
+
+      technicianId: String(intervention.technicianId || ""),
+
+      date: localDateValue(intervention.scheduledStart) || localDateValue(new Date()),
+
+      time: localTimeValue(intervention.scheduledStart),
+
+      durationMinutes: String(durationFromIntervention(intervention)),
+
+    });
+
+  }, [intervention]);
+
+ 
 
   if (!intervention) return null;
+
+ 
+
+  async function saveChanges(event) {
+
+    event.preventDefault();
+
+    setSaveError("");
+
+ 
+
+    if (!form.technicianId) {
+
+      setSaveError("Sélectionne un technicien.");
+
+      return;
+
+    }
+
+ 
+
+    if (!form.date || !form.time) {
+
+      setSaveError("La date et l'heure sont obligatoires.");
+
+      return;
+
+    }
+
+ 
+
+    try {
+
+      setSaving(true);
+
+      const { scheduledStart, scheduledEnd } = buildScheduledTimes(
+
+        form.date,
+
+        form.time,
+
+        form.durationMinutes,
+
+      );
+
+ 
+
+      const interventionId = intervention.interventionId || intervention.id;
+
+      await planningApiRequest(`/sav/interventions/${encodeURIComponent(interventionId)}`, {
+
+        method: "PATCH",
+
+        body: {
+
+          technicianId: form.technicianId,
+
+          scheduledStart,
+
+          scheduledEnd,
+
+          status:
+
+            intervention.status === "A_PLANIFIER"
+
+              ? "PLANIFIEE"
+
+              : intervention.status || "PLANIFIEE",
+
+          internalComment: "Planning modifié depuis le Planning SAV.",
+
+        },
+
+      });
+
+ 
+
+      await onSaved();
+
+      setEditMode(false);
+
+      onClose();
+
+    } catch (error) {
+
+      setSaveError(
+
+        error?.message || "Impossible de modifier cette intervention.",
+
+      );
+
+    } finally {
+
+      setSaving(false);
+
+    }
+
+  }
 
  
 
@@ -678,7 +938,7 @@ function InterventionDetail({ intervention, onClose }) {
 
     <div
 
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
 
       onMouseDown={onClose}
 
@@ -686,13 +946,13 @@ function InterventionDetail({ intervention, onClose }) {
 
       <Card
 
-        className="w-full max-w-2xl rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-2xl"
+        className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-2xl"
 
         onMouseDown={(event) => event.stopPropagation()}
 
       >
 
-        <CardHeader>
+        <CardHeader className="border-b border-[#eadcc9]">
 
           <div className="flex items-start justify-between gap-4">
 
@@ -712,21 +972,19 @@ function InterventionDetail({ intervention, onClose }) {
 
             </div>
 
-            <Button
+            <button
 
               type="button"
 
-              variant="outline"
-
               onClick={onClose}
 
-              className="rounded-2xl"
+              className="rounded-xl p-2 text-[#5b351f] hover:bg-[#f0dfcd]"
 
             >
 
-              Fermer
+              <X className="h-5 w-5" />
 
-            </Button>
+            </button>
 
           </div>
 
@@ -734,7 +992,7 @@ function InterventionDetail({ intervention, onClose }) {
 
  
 
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-5 p-6">
 
           {intervention.hasConflict ? (
 
@@ -750,25 +1008,275 @@ function InterventionDetail({ intervention, onClose }) {
 
  
 
-          <div className="grid gap-4 md:grid-cols-2">
+          {saveError ? (
 
-            <DetailItem label="Client" value={intervention.clientName || "Non renseigné"} icon={UserRound} />
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
 
-            <DetailItem label="Machine" value={intervention.machineCode || "Non renseignée"} icon={Wrench} />
+              {saveError}
 
-            <DetailItem label="Technicien" value={intervention.technician || "Non affecté"} icon={UserRound} />
+            </div>
 
-            <DetailItem label="Statut" value={statusLabel(intervention.status)} icon={RefreshCw} />
+          ) : null}
 
-            <DetailItem label="Début" value={formatDateTime(intervention.scheduledStart)} icon={CalendarDays} />
+ 
 
-            <DetailItem label="Fin" value={formatDateTime(intervention.scheduledEnd)} icon={Clock3} />
+          {!editMode ? (
 
-            <DetailItem label="Lieu" value={intervention.locationLabel || intervention.locationType || "Non renseigné"} icon={MapPin} />
+            <>
 
-            <DetailItem label="Google Agenda" value={intervention.googleEventId ? "Synchronisé" : "Non synchronisé"} icon={CalendarDays} />
+              <div className="grid gap-4 md:grid-cols-2">
 
-          </div>
+                <DetailItem label="Client" value={intervention.clientName || "Non renseigné"} icon={UserRound} />
+
+                <DetailItem label="Machine" value={intervention.machineCode || "Non renseignée"} icon={Wrench} />
+
+                <DetailItem label="Technicien" value={intervention.technician || "Non affecté"} icon={UserRound} />
+
+                <DetailItem label="Statut" value={statusLabel(intervention.status)} icon={RefreshCw} />
+
+                <DetailItem label="Début" value={formatDateTime(intervention.scheduledStart)} icon={CalendarDays} />
+
+                <DetailItem label="Fin" value={formatDateTime(intervention.scheduledEnd)} icon={Clock3} />
+
+                <DetailItem label="Lieu" value={intervention.locationLabel || intervention.locationType || "Non renseigné"} icon={MapPin} />
+
+                <DetailItem label="Google Agenda" value={intervention.googleEventId ? "Synchronisé" : "Non synchronisé"} icon={CalendarDays} />
+
+              </div>
+
+ 
+
+              <div className="flex justify-end">
+
+                <Button
+
+                  type="button"
+
+                  onClick={() => setEditMode(true)}
+
+                  className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
+
+                >
+
+                  <Pencil className="mr-2 h-4 w-4" />
+
+                  Modifier le créneau
+
+                </Button>
+
+              </div>
+
+            </>
+
+          ) : (
+
+            <form className="space-y-5" onSubmit={saveChanges}>
+
+              <div className="rounded-2xl border border-[#e4d4c2] bg-white p-4">
+
+                <div className="text-sm font-black text-[#2d1b12]">
+
+                  Modifier la planification
+
+                </div>
+
+                <div className="mt-1 text-xs text-[#7a5f4b]">
+
+                  La modification met à jour l'intervention et le planning du technicien.
+
+                </div>
+
+              </div>
+
+ 
+
+              <div className="grid gap-4 md:grid-cols-2">
+
+                <Field label="Technicien *">
+
+                  <select
+
+                    value={form.technicianId}
+
+                    onChange={(event) =>
+
+                      setForm((current) => ({
+
+                        ...current,
+
+                        technicianId: event.target.value,
+
+                      }))
+
+                    }
+
+                    className="h-11 w-full rounded-2xl border border-[#d8c4ad] bg-white px-4 text-sm"
+
+                    required
+
+                  >
+
+                    <option value="">Sélectionner un technicien</option>
+
+                    {technicians.map((technician) => (
+
+                      <option key={technician.id} value={technician.id}>
+
+                        {technician.displayName}
+
+                      </option>
+
+                    ))}
+
+                  </select>
+
+                </Field>
+
+ 
+
+                <Field label="Date *">
+
+                  <Input
+
+                    type="date"
+
+                    value={form.date}
+
+                    onChange={(event) =>
+
+                      setForm((current) => ({ ...current, date: event.target.value }))
+
+                    }
+
+                    required
+
+                  />
+
+                </Field>
+
+ 
+
+                <Field label="Heure de début *">
+
+                  <Input
+
+                    type="time"
+
+                    value={form.time}
+
+                    onChange={(event) =>
+
+                      setForm((current) => ({ ...current, time: event.target.value }))
+
+                    }
+
+                    required
+
+                  />
+
+                </Field>
+
+ 
+
+                <Field label="Durée *">
+
+                  <select
+
+                    value={form.durationMinutes}
+
+                    onChange={(event) =>
+
+                      setForm((current) => ({
+
+                        ...current,
+
+                        durationMinutes: event.target.value,
+
+                      }))
+
+                    }
+
+                    className="h-11 w-full rounded-2xl border border-[#d8c4ad] bg-white px-4 text-sm"
+
+                    required
+
+                  >
+
+                    {DURATION_OPTIONS.map((option) => (
+
+                      <option key={option.value} value={option.value}>
+
+                        {option.label}
+
+                      </option>
+
+                    ))}
+
+                  </select>
+
+                </Field>
+
+              </div>
+
+ 
+
+              <div className="flex flex-wrap justify-end gap-2">
+
+                <Button
+
+                  type="button"
+
+                  variant="outline"
+
+                  className="rounded-2xl"
+
+                  onClick={() => {
+
+                    setEditMode(false);
+
+                    setSaveError("");
+
+                  }}
+
+                  disabled={saving}
+
+                >
+
+                  Annuler
+
+                </Button>
+
+ 
+
+                <Button
+
+                  type="submit"
+
+                  className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
+
+                  disabled={saving}
+
+                >
+
+                  {saving ? (
+
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+
+                  ) : (
+
+                    <Save className="mr-2 h-4 w-4" />
+
+                  )}
+
+                  Enregistrer
+
+                </Button>
+
+              </div>
+
+            </form>
+
+          )}
 
         </CardContent>
 
@@ -799,6 +1307,28 @@ function DetailItem({ label, value, icon: Icon }) {
       <div className="mt-2 text-sm font-bold text-[#2d1b12]">{value}</div>
 
     </div>
+
+  );
+
+}
+
+ 
+
+function Field({ label, children }) {
+
+  return (
+
+    <label className="block">
+
+      <span className="mb-1 block text-sm font-semibold text-[#5b351f]">
+
+        {label}
+
+      </span>
+
+      {children}
+
+    </label>
 
   );
 
@@ -854,8 +1384,6 @@ export default function PlanningBoard() {
 
   );
 
- 
-
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
 
   const today = new Date();
@@ -864,7 +1392,15 @@ export default function PlanningBoard() {
 
   const hours = useMemo(
 
-    () => Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, index) => START_HOUR + index),
+    () =>
+
+      Array.from(
+
+        { length: END_HOUR - START_HOUR + 1 },
+
+        (_, index) => START_HOUR + index,
+
+      ),
 
     [],
 
@@ -898,9 +1434,9 @@ export default function PlanningBoard() {
 
       const [planningRows, unscheduledRows] = await Promise.all([
 
-        planningApiFetch(`/sav/planning?${params.toString()}`),
+        planningApiRequest(`/sav/planning?${params.toString()}`),
 
-        planningApiFetch("/sav/interventions?status=A_PLANIFIER"),
+        planningApiRequest("/sav/interventions?status=A_PLANIFIER"),
 
       ]);
 
@@ -1026,7 +1562,11 @@ export default function PlanningBoard() {
 
                 <div>
 
-                  <CardTitle className="text-2xl text-[#2d1b12]">Planning SAV</CardTitle>
+                  <CardTitle className="text-2xl text-[#2d1b12]">
+
+                    Planning SAV
+
+                  </CardTitle>
 
                   <p className="mt-1 text-sm text-[#7a5f4b]">
 
@@ -1112,7 +1652,11 @@ export default function PlanningBoard() {
 
                 >
 
-                  <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                  <RefreshCw
+
+                    className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+
+                  />
 
                   Actualiser
 
@@ -1132,7 +1676,11 @@ export default function PlanningBoard() {
 
               <div>
 
-                <div className="text-sm font-black text-[#2d1b12]">Vue du planning</div>
+                <div className="text-sm font-black text-[#2d1b12]">
+
+                  Vue du planning
+
+                </div>
 
                 <div className="mt-1 text-xs text-[#7a5f4b]">
 
@@ -1202,7 +1750,11 @@ export default function PlanningBoard() {
 
           <Card className="rounded-3xl border-red-200 bg-red-50 shadow-sm">
 
-            <CardContent className="p-4 text-sm font-medium text-red-700">{error}</CardContent>
+            <CardContent className="p-4 text-sm font-medium text-red-700">
+
+              {error}
+
+            </CardContent>
 
           </Card>
 
@@ -1256,7 +1808,11 @@ export default function PlanningBoard() {
 
                           </div>
 
-                          <div className="mt-1 text-lg font-black text-[#2d1b12]">{formatDay(day)}</div>
+                          <div className="mt-1 text-lg font-black text-[#2d1b12]">
+
+                            {formatDay(day)}
+
+                          </div>
 
                         </div>
 
@@ -1266,7 +1822,13 @@ export default function PlanningBoard() {
 
  
 
-                    <div className="relative border-r border-[#e4d4c2] bg-[#fffdf8]" style={{ height: `${agendaHeight}px` }}>
+                    <div
+
+                      className="relative border-r border-[#e4d4c2] bg-[#fffdf8]"
+
+                      style={{ height: `${agendaHeight}px` }}
+
+                    >
 
                       {hours.map((hour) => (
 
@@ -1380,7 +1942,11 @@ export default function PlanningBoard() {
 
               <CardTitle className="text-xl text-[#2d1b12]">À planifier</CardTitle>
 
-              <p className="text-sm text-[#7a5f4b]">Interventions créées sans date ni heure.</p>
+              <p className="text-sm text-[#7a5f4b]">
+
+                Interventions créées sans date ni heure. Clique sur une intervention pour lui attribuer un créneau.
+
+              </p>
 
             </CardHeader>
 
@@ -1414,11 +1980,15 @@ export default function PlanningBoard() {
 
  
 
-      <InterventionDetail
+      <InterventionModal
 
         intervention={selectedIntervention}
 
+        technicians={technicians}
+
         onClose={() => setSelectedIntervention(null)}
+
+        onSaved={loadPlanning}
 
       />
 
