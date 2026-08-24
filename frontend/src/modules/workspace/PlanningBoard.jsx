@@ -1,16 +1,10 @@
-import React, {
-
-  useEffect,
-
-  useMemo,
-
-  useState,
-
-} from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
  
 
 import {
+
+  AlertTriangle,
 
   CalendarDays,
 
@@ -52,35 +46,21 @@ import { Badge } from "@/components/ui/badge";
 
  
 
-const API_BASE_URL =
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
-  import.meta.env.VITE_API_BASE_URL ||
-
-  "/api";
+const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || "change-me";
 
  
 
-const ADMIN_API_KEY =
+const DAY_NAMES = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
 
-  import.meta.env.VITE_ADMIN_API_KEY ||
+const START_HOUR = 8;
 
-  "change-me";
+const END_HOUR = 18;
 
- 
+const HOUR_HEIGHT = 72;
 
-const DAY_NAMES = [
-
-  "Lundi",
-
-  "Mardi",
-
-  "Mercredi",
-
-  "Jeudi",
-
-  "Vendredi",
-
-];
+const MIN_EVENT_HEIGHT = 42;
 
  
 
@@ -88,33 +68,13 @@ function startOfWeek(date) {
 
   const result = new Date(date);
 
- 
-
   result.setHours(0, 0, 0, 0);
-
- 
 
   const day = result.getDay();
 
- 
+  const difference = day === 0 ? -6 : 1 - day;
 
-  const difference =
-
-    day === 0
-
-      ? -6
-
-      : 1 - day;
-
- 
-
-  result.setDate(
-
-    result.getDate() + difference,
-
-  );
-
- 
+  result.setDate(result.getDate() + difference);
 
   return result;
 
@@ -126,15 +86,7 @@ function addDays(date, days) {
 
   const result = new Date(date);
 
- 
-
-  result.setDate(
-
-    result.getDate() + days,
-
-  );
-
- 
+  result.setDate(result.getDate() + days);
 
   return result;
 
@@ -142,29 +94,9 @@ function addDays(date, days) {
 
  
 
-function toApiDateTime(date) {
-
-  return date.toISOString();
-
-}
-
- 
-
 function formatDay(date) {
 
-  return date.toLocaleDateString(
-
-    "fr-FR",
-
-    {
-
-      day: "2-digit",
-
-      month: "2-digit",
-
-    },
-
-  );
+  return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
 
 }
 
@@ -172,21 +104,15 @@ function formatDay(date) {
 
 function formatLongDate(date) {
 
-  return date.toLocaleDateString(
+  return date.toLocaleDateString("fr-FR", {
 
-    "fr-FR",
+    day: "numeric",
 
-    {
+    month: "long",
 
-      day: "numeric",
+    year: "numeric",
 
-      month: "long",
-
-      year: "numeric",
-
-    },
-
-  );
+  });
 
 }
 
@@ -196,41 +122,61 @@ function formatHour(value) {
 
   if (!value) return "--:--";
 
- 
+  const parsed = new Date(value);
 
-  const parsed =
+  if (Number.isNaN(parsed.getTime())) return "--:--";
 
-    new Date(value);
+  return parsed.toLocaleTimeString("fr-FR", {
 
- 
+    hour: "2-digit",
 
-  if (
+    minute: "2-digit",
 
-    Number.isNaN(
+  });
 
-      parsed.getTime(),
-
-    )
-
-  ) {
-
-    return "--:--";
-
-  }
+}
 
  
 
-  return parsed.toLocaleTimeString(
+function formatDateTime(value) {
 
-    "fr-FR",
+  if (!value) return "Non renseigné";
 
-    {
+  const parsed = new Date(value);
 
-      hour: "2-digit",
+  if (Number.isNaN(parsed.getTime())) return "Non renseigné";
 
-      minute: "2-digit",
+  return parsed.toLocaleString("fr-FR", {
 
-    },
+    weekday: "long",
+
+    day: "2-digit",
+
+    month: "2-digit",
+
+    year: "numeric",
+
+    hour: "2-digit",
+
+    minute: "2-digit",
+
+  });
+
+}
+
+ 
+
+function sameDay(first, second) {
+
+  if (!first || !second) return false;
+
+  return (
+
+    first.getFullYear() === second.getFullYear() &&
+
+    first.getMonth() === second.getMonth() &&
+
+    first.getDate() === second.getDate()
 
   );
 
@@ -238,43 +184,29 @@ function formatHour(value) {
 
  
 
-function sameDay(
+function normalizePlanningEntry(entry) {
 
-  first,
+  return {
 
-  second,
+    ...entry,
 
-) {
+    scheduledStart: entry.scheduledStart || entry.startsAt || null,
 
-  if (
+    scheduledEnd: entry.scheduledEnd || entry.endsAt || null,
 
-    !first ||
+    ticketReference: entry.ticketReference || null,
 
-    !second
+    ticketTitle: entry.ticketTitle || entry.title || null,
 
-  ) {
+    interventionType: entry.interventionType || "REPARATION",
 
-    return false;
+    status: entry.status || "PLANIFIEE",
 
-  }
+    ticketPriority: entry.ticketPriority || "NORMALE",
 
- 
+    technician: entry.technician || "Technicien non affecté",
 
-  return (
-
-    first.getFullYear() ===
-
-      second.getFullYear() &&
-
-    first.getMonth() ===
-
-      second.getMonth() &&
-
-    first.getDate() ===
-
-      second.getDate()
-
-  );
+  };
 
 }
 
@@ -284,53 +216,21 @@ function statusLabel(status) {
 
   const labels = {
 
-    A_PLANIFIER:
+    A_PLANIFIER: "À planifier",
 
-      "À planifier",
+    PLANIFIEE: "Planifiée",
 
- 
+    EN_ROUTE: "En route",
 
-    PLANIFIEE:
+    EN_COURS: "En cours",
 
-      "Planifiée",
+    TERMINEE: "Terminée",
 
- 
-
-    EN_ROUTE:
-
-      "En route",
-
- 
-
-    EN_COURS:
-
-      "En cours",
-
- 
-
-    TERMINEE:
-
-      "Terminée",
-
- 
-
-    ANNULEE:
-
-      "Annulée",
+    ANNULEE: "Annulée",
 
   };
 
- 
-
-  return (
-
-    labels[status] ||
-
-    status ||
-
-    "-"
-
-  );
+  return labels[status] || status || "-";
 
 }
 
@@ -340,79 +240,37 @@ function typeLabel(type) {
 
   const labels = {
 
-    DIAGNOSTIC:
+    DIAGNOSTIC: "Diagnostic",
 
-      "Diagnostic",
+    REPARATION: "Réparation",
 
- 
+    INSTALLATION: "Installation",
 
-    REPARATION:
+    MAINTENANCE_PREVENTIVE: "Maintenance préventive",
 
-      "Réparation",
+    DEPANNAGE: "Dépannage",
 
- 
+    RETRAIT: "Retrait",
 
-    INSTALLATION:
+    LIVRAISON: "Livraison",
 
-      "Installation",
-
- 
-
-    MAINTENANCE_PREVENTIVE:
-
-      "Maintenance préventive",
-
- 
-
-    DEPANNAGE:
-
-      "Dépannage",
-
- 
-
-    RETRAIT:
-
-      "Retrait",
-
- 
-
-    LIVRAISON:
-
-      "Livraison",
-
- 
-
-    AUTRE:
-
-      "Autre",
+    AUTRE: "Autre",
 
   };
 
- 
-
-  return (
-
-    labels[type] ||
-
-    type ||
-
-    "Intervention"
-
-  );
+  return labels[type] || type || "Intervention";
 
 }
 
  
 
-function priorityLabel(
-
-  priority,
-
-) {
+function priorityLabel(priority) {
 
   const labels = {
 
     URGENTE: "Urgente",
+
+    CRITIQUE: "Critique",
 
     HAUTE: "Haute",
 
@@ -422,55 +280,29 @@ function priorityLabel(
 
   };
 
- 
-
-  return (
-
-    labels[priority] ||
-
-    priority ||
-
-    "Normale"
-
-  );
+  return labels[priority] || priority || "Normale";
 
 }
 
  
 
-function priorityClasses(
+function priorityClasses(priority) {
 
-  priority,
-
-) {
-
-  switch (
-
-    String(
-
-      priority || "",
-
-    ).toUpperCase()
-
-  ) {
+  switch (String(priority || "").toUpperCase()) {
 
     case "URGENTE":
 
-      return "border-red-300 bg-red-50 text-red-800";
+    case "CRITIQUE":
 
- 
+      return "border-red-300 bg-red-50 text-red-800";
 
     case "HAUTE":
 
       return "border-orange-300 bg-orange-50 text-orange-800";
 
- 
-
     case "BASSE":
 
       return "border-slate-200 bg-slate-50 text-slate-700";
-
- 
 
     default:
 
@@ -482,45 +314,23 @@ function priorityClasses(
 
  
 
-async function planningApiFetch(
+async function planningApiFetch(path) {
 
-  path,
+  const response = await fetch(`${API_BASE_URL}${path}`, {
 
-) {
+    headers: {
 
-  const response =
+      Accept: "application/json",
 
-    await fetch(
+      "x-api-key": ADMIN_API_KEY,
 
-      `${API_BASE_URL}${path}`,
+    },
 
-      {
-
-        headers: {
-
-          Accept:
-
-            "application/json",
+  });
 
  
 
-          "x-api-key":
-
-            ADMIN_API_KEY,
-
-        },
-
-      },
-
-    );
-
- 
-
-  const raw =
-
-    await response.text();
-
- 
+  const raw = await response.text();
 
   let payload = null;
 
@@ -530,9 +340,7 @@ async function planningApiFetch(
 
     try {
 
-      payload =
-
-        JSON.parse(raw);
+      payload = JSON.parse(raw);
 
     } catch {
 
@@ -548,11 +356,7 @@ async function planningApiFetch(
 
     throw new Error(
 
-      payload?.message ||
-
-        payload?.error ||
-
-        `Erreur API ${response.status}`,
+      payload?.message || payload?.error || `Erreur API ${response.status}`,
 
     );
 
@@ -568,69 +372,63 @@ async function planningApiFetch(
 
 async function loadTechnicians() {
 
-  return planningApiFetch(
-
-    "/sav/technicians",
-
-  );
+  return planningApiFetch("/sav/technicians");
 
 }
 
  
 
-function normalizePlanningEntry(entry) {
+function minutesFromMidnight(date) {
+
+  return date.getHours() * 60 + date.getMinutes();
+
+}
+
+ 
+
+function eventPosition(entry) {
+
+  const start = new Date(entry.scheduledStart);
+
+  const end = new Date(entry.scheduledEnd || entry.scheduledStart);
+
+  const visibleStartMinutes = START_HOUR * 60;
+
+  const visibleEndMinutes = END_HOUR * 60;
+
+ 
+
+  const rawStart = minutesFromMidnight(start);
+
+  const rawEnd = Math.max(minutesFromMidnight(end), rawStart + 30);
+
+ 
+
+  const clippedStart = Math.max(rawStart, visibleStartMinutes);
+
+  const clippedEnd = Math.min(rawEnd, visibleEndMinutes);
+
+ 
+
+  if (clippedEnd <= visibleStartMinutes || clippedStart >= visibleEndMinutes) {
+
+    return null;
+
+  }
+
+ 
 
   return {
 
-    ...entry,
+    top: ((clippedStart - visibleStartMinutes) / 60) * HOUR_HEIGHT,
 
-    scheduledStart:
+    height: Math.max(
 
-      entry.scheduledStart ||
+      ((clippedEnd - clippedStart) / 60) * HOUR_HEIGHT,
 
-      entry.startsAt ||
+      MIN_EVENT_HEIGHT,
 
-      null,
-
-    scheduledEnd:
-
-      entry.scheduledEnd ||
-
-      entry.endsAt ||
-
-      null,
-
-    ticketReference:
-
-      entry.ticketReference ||
-
-      null,
-
-    ticketTitle:
-
-      entry.ticketTitle ||
-
-      entry.title ||
-
-      null,
-
-    interventionType:
-
-      entry.interventionType ||
-
-      "REPARATION",
-
-    status:
-
-      entry.status ||
-
-      "PLANIFIEE",
-
-    ticketPriority:
-
-      entry.ticketPriority ||
-
-      "NORMALE",
+    ),
 
   };
 
@@ -638,13 +436,53 @@ function normalizePlanningEntry(entry) {
 
  
 
-function InterventionCard({
+function overlaps(first, second) {
 
-  intervention,
+  const firstStart = new Date(first.scheduledStart).getTime();
 
-  onClick,
+  const firstEnd = new Date(first.scheduledEnd || first.scheduledStart).getTime();
 
-}) {
+  const secondStart = new Date(second.scheduledStart).getTime();
+
+  const secondEnd = new Date(second.scheduledEnd || second.scheduledStart).getTime();
+
+  return firstStart < secondEnd && firstEnd > secondStart;
+
+}
+
+ 
+
+function addConflictFlags(entries) {
+
+  return entries.map((entry, index) => {
+
+    const hasConflict = entries.some((other, otherIndex) => {
+
+      if (index === otherIndex) return false;
+
+      if (!entry.technicianId || !other.technicianId) return false;
+
+      if (String(entry.technicianId) !== String(other.technicianId)) return false;
+
+      return overlaps(entry, other);
+
+    });
+
+    return { ...entry, hasConflict };
+
+  });
+
+}
+
+ 
+
+function AgendaEvent({ intervention, onClick }) {
+
+  const position = eventPosition(intervention);
+
+  if (!position) return null;
+
+ 
 
   return (
 
@@ -652,15 +490,123 @@ function InterventionCard({
 
       type="button"
 
-      onClick={() =>
+      onClick={() => onClick(intervention)}
 
-        onClick(
+      className={`absolute left-1 right-1 overflow-hidden rounded-xl border bg-white px-2 py-1.5 text-left shadow-sm transition hover:z-30 hover:border-[#5b351f] hover:shadow-md ${
 
-          intervention,
+        intervention.hasConflict
 
-        )
+          ? "z-20 border-red-400 ring-2 ring-red-200"
 
-      }
+          : "z-10 border-[#d8c4ad]"
+
+      }`}
+
+      style={{
+
+        top: `${position.top}px`,
+
+        height: `${position.height}px`,
+
+      }}
+
+      title={`${formatHour(intervention.scheduledStart)} - ${formatHour(
+
+        intervention.scheduledEnd,
+
+      )} · ${intervention.clientName || "Client"}`}
+
+    >
+
+      <div className="flex items-start justify-between gap-1">
+
+        <div className="min-w-0 text-[11px] font-black text-[#2d1b12]">
+
+          {formatHour(intervention.scheduledStart)} - {formatHour(intervention.scheduledEnd)}
+
+        </div>
+
+        {intervention.hasConflict ? (
+
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-600" />
+
+        ) : null}
+
+      </div>
+
+ 
+
+      <div className="mt-0.5 truncate text-xs font-black text-[#5b351f]">
+
+        {intervention.clientName || "Client non renseigné"}
+
+      </div>
+
+ 
+
+      <div className="mt-0.5 truncate text-[11px] text-[#7a5f4b]">
+
+        {intervention.machineCode || "Machine non renseignée"}
+
+      </div>
+
+ 
+
+      <div className="mt-0.5 truncate text-[11px] font-semibold text-[#2d1b12]">
+
+        {intervention.technician || "Technicien non affecté"}
+
+      </div>
+
+ 
+
+      {position.height >= 68 ? (
+
+        <div className="mt-1 flex items-center justify-between gap-1">
+
+          <span className="truncate text-[10px] text-[#7a5f4b]">
+
+            {intervention.ticketReference || typeLabel(intervention.interventionType)}
+
+          </span>
+
+          <Badge
+
+            variant="outline"
+
+            className={`h-5 px-1.5 text-[9px] ${priorityClasses(
+
+              intervention.ticketPriority,
+
+            )}`}
+
+          >
+
+            {priorityLabel(intervention.ticketPriority)}
+
+          </Badge>
+
+        </div>
+
+      ) : null}
+
+    </button>
+
+  );
+
+}
+
+ 
+
+function InterventionCard({ intervention, onClick }) {
+
+  return (
+
+    <button
+
+      type="button"
+
+      onClick={() => onClick(intervention)}
 
       className="w-full rounded-2xl border border-[#e4d4c2] bg-white p-3 text-left shadow-sm transition hover:border-[#5b351f] hover:bg-[#fffaf3]"
 
@@ -670,59 +616,29 @@ function InterventionCard({
 
         <div className="min-w-0">
 
-          <div className="text-sm font-black text-[#2d1b12]">
+          <div className="truncate text-sm font-bold text-[#5b351f]">
 
-            {formatHour(
-
-              intervention.scheduledStart,
-
-            )}
-
- 
-
-            {intervention.scheduledEnd
-
-              ? ` - ${formatHour(
-
-                  intervention.scheduledEnd,
-
-                )}`
-
-              : ""}
+            {intervention.clientName || "Client non renseigné"}
 
           </div>
 
- 
+          <div className="mt-1 text-xs text-[#7a5f4b]">
 
-          <div className="mt-1 truncate text-sm font-bold text-[#5b351f]">
-
-            {intervention.clientName ||
-
-              "Client non renseigné"}
+            {intervention.ticketReference || "Ticket SAV"}
 
           </div>
 
         </div>
 
- 
-
         <Badge
 
           variant="outline"
 
-          className={priorityClasses(
-
-            intervention.ticketPriority,
-
-          )}
+          className={priorityClasses(intervention.ticketPriority)}
 
         >
 
-          {priorityLabel(
-
-            intervention.ticketPriority,
-
-          )}
+          {priorityLabel(intervention.ticketPriority)}
 
         </Badge>
 
@@ -732,47 +648,13 @@ function InterventionCard({
 
       <div className="mt-3 space-y-1 text-xs text-[#7a5f4b]">
 
-        <div className="font-semibold text-[#2d1b12]">
-
-          {typeLabel(
-
-            intervention.interventionType,
-
-          )}
-
-        </div>
-
- 
-
-        <div>
-
-          {intervention.ticketReference ||
-
-            "Ticket SAV"}
-
-        </div>
-
- 
-
-        <div>
-
-          {intervention.machineCode ||
-
-            "Machine non renseignée"}
-
-        </div>
-
- 
+        <div>{intervention.machineCode || "Machine non renseignée"}</div>
 
         <div className="flex items-center gap-1">
 
           <UserRound className="h-3.5 w-3.5" />
 
- 
-
-          {intervention.technician ||
-
-            "Technicien non affecté"}
+          {intervention.technician || "Technicien non affecté"}
 
         </div>
 
@@ -786,19 +668,9 @@ function InterventionCard({
 
  
 
-function InterventionDetail({
+function InterventionDetail({ intervention, onClose }) {
 
-  intervention,
-
-  onClose,
-
-}) {
-
-  if (!intervention) {
-
-    return null;
-
-  }
+  if (!intervention) return null;
 
  
 
@@ -816,15 +688,7 @@ function InterventionDetail({
 
         className="w-full max-w-2xl rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-2xl"
 
-        onMouseDown={(
-
-          event,
-
-        ) =>
-
-          event.stopPropagation()
-
-        }
+        onMouseDown={(event) => event.stopPropagation()}
 
       >
 
@@ -836,29 +700,17 @@ function InterventionDetail({
 
               <CardTitle className="text-2xl text-[#2d1b12]">
 
-                {intervention.ticketReference ||
-
-                  "Intervention SAV"}
+                {intervention.ticketReference || "Intervention SAV"}
 
               </CardTitle>
 
- 
-
               <p className="mt-1 text-sm text-[#7a5f4b]">
 
-                {intervention.ticketTitle ||
-
-                  typeLabel(
-
-                    intervention.interventionType,
-
-                  )}
+                {intervention.ticketTitle || typeLabel(intervention.interventionType)}
 
               </p>
 
             </div>
-
- 
 
             <Button
 
@@ -884,219 +736,39 @@ function InterventionDetail({
 
         <CardContent className="space-y-5">
 
+          {intervention.hasConflict ? (
+
+            <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+
+              <AlertTriangle className="h-5 w-5" />
+
+              Conflit horaire détecté pour ce technicien.
+
+            </div>
+
+          ) : null}
+
+ 
+
           <div className="grid gap-4 md:grid-cols-2">
 
-            <DetailItem
+            <DetailItem label="Client" value={intervention.clientName || "Non renseigné"} icon={UserRound} />
 
-              label="Client"
+            <DetailItem label="Machine" value={intervention.machineCode || "Non renseignée"} icon={Wrench} />
 
-              value={
+            <DetailItem label="Technicien" value={intervention.technician || "Non affecté"} icon={UserRound} />
 
-                intervention.clientName ||
+            <DetailItem label="Statut" value={statusLabel(intervention.status)} icon={RefreshCw} />
 
-                "Non renseigné"
+            <DetailItem label="Début" value={formatDateTime(intervention.scheduledStart)} icon={CalendarDays} />
 
-              }
+            <DetailItem label="Fin" value={formatDateTime(intervention.scheduledEnd)} icon={Clock3} />
 
-              icon={UserRound}
+            <DetailItem label="Lieu" value={intervention.locationLabel || intervention.locationType || "Non renseigné"} icon={MapPin} />
 
-            />
-
- 
-
-            <DetailItem
-
-              label="Machine"
-
-              value={
-
-                intervention.machineCode ||
-
-                "Non renseignée"
-
-              }
-
-              icon={Wrench}
-
-            />
-
- 
-
-            <DetailItem
-
-              label="Technicien"
-
-              value={
-
-                intervention.technician ||
-
-                "Non affecté"
-
-              }
-
-              icon={UserRound}
-
-            />
-
- 
-
-            <DetailItem
-
-              label="Statut"
-
-              value={statusLabel(
-
-                intervention.status,
-
-              )}
-
-              icon={RefreshCw}
-
-            />
-
- 
-
-            <DetailItem
-
-              label="Début"
-
-              value={
-
-                intervention.scheduledStart
-
-                  ? new Date(
-
-                      intervention.scheduledStart,
-
-                    ).toLocaleString(
-
-                      "fr-FR",
-
-                    )
-
-                  : "Non planifié"
-
-              }
-
-              icon={CalendarDays}
-
-            />
-
- 
-
-            <DetailItem
-
-              label="Fin"
-
-              value={
-
-                intervention.scheduledEnd
-
-                  ? new Date(
-
-                      intervention.scheduledEnd,
-
-                    ).toLocaleString(
-
-                      "fr-FR",
-
-                    )
-
-                  : "Non renseignée"
-
-              }
-
-              icon={Clock3}
-
-            />
-
- 
-
-            <DetailItem
-
-              label="Lieu"
-
-              value={
-
-                intervention.locationLabel ||
-
-                intervention.locationType ||
-
-                "Non renseigné"
-
-              }
-
-              icon={MapPin}
-
-            />
-
- 
-
-            <DetailItem
-
-              label="Google Agenda"
-
-              value={
-
-                intervention.googleSyncStatus ||
-
-                "NON_SYNCHRONISE"
-
-              }
-
-              icon={CalendarDays}
-
-            />
+            <DetailItem label="Google Agenda" value={intervention.googleEventId ? "Synchronisé" : "Non synchronisé"} icon={CalendarDays} />
 
           </div>
-
- 
-
-          {intervention.description ? (
-
-            <div className="rounded-3xl border border-[#e4d4c2] bg-white p-5">
-
-              <div className="text-xs font-bold uppercase tracking-wide text-[#7a5f4b]">
-
-                Intervention
-
-              </div>
-
- 
-
-              <div className="mt-2 text-sm leading-relaxed text-[#2d1b12]">
-
-                {intervention.description}
-
-              </div>
-
-            </div>
-
-          ) : null}
-
- 
-
-          {intervention.internalComment ? (
-
-            <div className="rounded-3xl border border-[#e4d4c2] bg-white p-5">
-
-              <div className="text-xs font-bold uppercase tracking-wide text-[#7a5f4b]">
-
-                Commentaire interne
-
-              </div>
-
- 
-
-              <div className="mt-2 text-sm leading-relaxed text-[#2d1b12]">
-
-                {intervention.internalComment}
-
-              </div>
-
-            </div>
-
-          ) : null}
 
         </CardContent>
 
@@ -1110,15 +782,7 @@ function InterventionDetail({
 
  
 
-function DetailItem({
-
-  label,
-
-  value,
-
-  icon: Icon,
-
-}) {
+function DetailItem({ label, value, icon: Icon }) {
 
   return (
 
@@ -1132,13 +796,27 @@ function DetailItem({
 
       </div>
 
+      <div className="mt-2 text-sm font-bold text-[#2d1b12]">{value}</div>
+
+    </div>
+
+  );
+
+}
+
  
 
-      <div className="mt-2 text-sm font-bold text-[#2d1b12]">
+function StatBox({ title, value, subtitle }) {
 
-        {value}
+  return (
 
-      </div>
+    <div className="rounded-3xl border border-[#e4d4c2] bg-white p-5 shadow-sm">
+
+      <div className="text-sm font-bold text-[#7a5f4b]">{title}</div>
+
+      <div className="mt-2 text-3xl font-black text-[#2d1b12]">{value}</div>
+
+      <div className="mt-1 text-xs text-[#9a8571]">{subtitle}</div>
 
     </div>
 
@@ -1150,133 +828,47 @@ function DetailItem({
 
 export default function PlanningBoard() {
 
-  const [
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
 
-    weekStart,
+  const [interventions, setInterventions] = useState([]);
 
-    setWeekStart,
+  const [unscheduled, setUnscheduled] = useState([]);
 
-  ] = useState(() =>
+  const [loading, setLoading] = useState(true);
 
-    startOfWeek(
+  const [error, setError] = useState("");
 
-      new Date(),
+  const [selectedIntervention, setSelectedIntervention] = useState(null);
 
-    ),
+  const [technicians, setTechnicians] = useState([]);
+
+  const [technicianFilter, setTechnicianFilter] = useState("ALL");
+
+ 
+
+  const weekDays = useMemo(
+
+    () => Array.from({ length: 5 }, (_, index) => addDays(weekStart, index)),
+
+    [weekStart],
 
   );
 
  
 
-  const [
+  const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
 
-    interventions,
+  const today = new Date();
 
-    setInterventions,
+  const agendaHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
 
-  ] = useState([]);
+  const hours = useMemo(
 
- 
+    () => Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, index) => START_HOUR + index),
 
-  const [
+    [],
 
-    loading,
-
-    setLoading,
-
-  ] = useState(true);
-
- 
-
-  const [
-
-    error,
-
-    setError,
-
-  ] = useState("");
-
- 
-
-  const [
-
-    selectedIntervention,
-
-    setSelectedIntervention,
-
-  ] = useState(null);
-
- 
-
-  const [
-
-    technicians,
-
-    setTechnicians,
-
-  ] = useState([]);
-
- 
-
-  const [
-
-    technicianFilter,
-
-    setTechnicianFilter,
-
-  ] = useState("ALL");
-
- 
-
-  const weekDays =
-
-    useMemo(
-
-      () =>
-
-        Array.from(
-
-          {
-
-            length: 5,
-
-          },
-
-          (_, index) =>
-
-            addDays(
-
-              weekStart,
-
-              index,
-
-            ),
-
-        ),
-
-      [weekStart],
-
-    );
-
- 
-
-  const weekEnd =
-
-    useMemo(
-
-      () =>
-
-        addDays(
-
-          weekStart,
-
-          7,
-
-        ),
-
-      [weekStart],
-
-    );
+  );
 
  
 
@@ -1290,41 +882,11 @@ export default function PlanningBoard() {
 
  
 
-      const from =
-
-        encodeURIComponent(
-
-          toApiDateTime(
-
-            weekStart,
-
-          ),
-
-        );
-
- 
-
-      const to =
-
-        encodeURIComponent(
-
-          toApiDateTime(
-
-            weekEnd,
-
-          ),
-
-        );
-
- 
-
       const params = new URLSearchParams();
 
-      params.set("from", toApiDateTime(weekStart));
+      params.set("from", weekStart.toISOString());
 
-      params.set("to", toApiDateTime(weekEnd));
-
- 
+      params.set("to", weekEnd.toISOString());
 
       if (technicianFilter !== "ALL") {
 
@@ -1334,49 +896,61 @@ export default function PlanningBoard() {
 
  
 
-      const result =
+      const [planningRows, unscheduledRows] = await Promise.all([
 
-        await planningApiFetch(
+        planningApiFetch(`/sav/planning?${params.toString()}`),
 
-          `/sav/planning?${params.toString()}`,
+        planningApiFetch("/sav/interventions?status=A_PLANIFIER"),
 
-        );
+      ]);
 
  
 
-      setInterventions(
+      const normalizedPlanning = Array.isArray(planningRows)
 
-        Array.isArray(result)
+        ? planningRows.map(normalizePlanningEntry)
 
-          ? result.map(normalizePlanningEntry)
+        : [];
 
-          : [],
+ 
 
-      );
+      setInterventions(addConflictFlags(normalizedPlanning));
+
+ 
+
+      const normalizedUnscheduled = Array.isArray(unscheduledRows)
+
+        ? unscheduledRows
+
+            .map(normalizePlanningEntry)
+
+            .filter((item) => !item.scheduledStart)
+
+            .filter(
+
+              (item) =>
+
+                technicianFilter === "ALL" ||
+
+                String(item.technicianId || "") === String(technicianFilter),
+
+            )
+
+        : [];
+
+ 
+
+      setUnscheduled(normalizedUnscheduled);
 
     } catch (loadError) {
 
-      console.error(
+      console.error("PLANNING LOAD ERROR", loadError);
 
-        "PLANNING LOAD ERROR",
-
-        loadError,
-
-      );
-
- 
-
-      setError(
-
-        loadError?.message ||
-
-          "Impossible de charger le planning SAV.",
-
-      );
-
- 
+      setError(loadError?.message || "Impossible de charger le planning SAV.");
 
       setInterventions([]);
+
+      setUnscheduled([]);
 
     } finally {
 
@@ -1400,25 +974,11 @@ export default function PlanningBoard() {
 
     loadTechnicians()
 
-      .then((rows) => {
+      .then((rows) => setTechnicians(Array.isArray(rows) ? rows : []))
 
-        setTechnicians(
+      .catch((loadError) => {
 
-          Array.isArray(rows) ? rows : [],
-
-        );
-
-      })
-
-      .catch((error) => {
-
-        console.error(
-
-          "PLANNING TECHNICIANS ERROR",
-
-          error,
-
-        );
+        console.error("PLANNING TECHNICIANS ERROR", loadError);
 
         setTechnicians([]);
 
@@ -1428,75 +988,19 @@ export default function PlanningBoard() {
 
  
 
-  const today =
+  const todayCount = interventions.filter(
 
-    new Date();
+    (intervention) =>
 
- 
+      intervention.scheduledStart &&
 
-  const todayCount =
+      sameDay(new Date(intervention.scheduledStart), today),
 
-    interventions.filter(
-
-      (intervention) =>
-
-        intervention.scheduledStart &&
-
-        sameDay(
-
-          new Date(
-
-            intervention.scheduledStart,
-
-          ),
-
-          today,
-
-        ),
-
-    ).length;
+  ).length;
 
  
 
-  const plannedCount =
-
-    interventions.filter(
-
-      (intervention) =>
-
-        intervention.status !==
-
-        "ANNULEE",
-
-    ).length;
-
- 
-
-  const unassignedCount =
-
-    interventions.filter(
-
-      (intervention) =>
-
-        !intervention.technician &&
-
-        intervention.status !==
-
-          "ANNULEE",
-
-    ).length;
-
- 
-
-  const unscheduled =
-
-    interventions.filter(
-
-      (intervention) =>
-
-        !intervention.scheduledStart,
-
-    );
+  const conflictCount = interventions.filter((item) => item.hasConflict).length;
 
  
 
@@ -1520,21 +1024,13 @@ export default function PlanningBoard() {
 
                 </div>
 
- 
-
                 <div>
 
-                  <CardTitle className="text-2xl text-[#2d1b12]">
-
-                    Planning SAV
-
-                  </CardTitle>
-
- 
+                  <CardTitle className="text-2xl text-[#2d1b12]">Planning SAV</CardTitle>
 
                   <p className="mt-1 text-sm text-[#7a5f4b]">
 
-                    Interventions, réparations et affectations techniciens.
+                    Agenda des interventions, disponibilités et affectations techniciens.
 
                   </p>
 
@@ -1554,21 +1050,7 @@ export default function PlanningBoard() {
 
                   className="rounded-2xl border-[#d8c4ad] bg-white text-[#5b351f]"
 
-                  onClick={() =>
-
-                    setWeekStart(
-
-                      addDays(
-
-                        weekStart,
-
-                        -7,
-
-                      ),
-
-                    )
-
-                  }
+                  onClick={() => setWeekStart(addDays(weekStart, -7))}
 
                 >
 
@@ -1588,23 +1070,11 @@ export default function PlanningBoard() {
 
                   className="rounded-2xl border-[#d8c4ad] bg-white text-[#5b351f]"
 
-                  onClick={() =>
-
-                    setWeekStart(
-
-                      startOfWeek(
-
-                        new Date(),
-
-                      ),
-
-                    )
-
-                  }
+                  onClick={() => setWeekStart(startOfWeek(new Date()))}
 
                 >
 
-                  Aujourd’hui
+                  Aujourd'hui
 
                 </Button>
 
@@ -1618,21 +1088,7 @@ export default function PlanningBoard() {
 
                   className="rounded-2xl border-[#d8c4ad] bg-white text-[#5b351f]"
 
-                  onClick={() =>
-
-                    setWeekStart(
-
-                      addDays(
-
-                        weekStart,
-
-                        7,
-
-                      ),
-
-                    )
-
-                  }
+                  onClick={() => setWeekStart(addDays(weekStart, 7))}
 
                 >
 
@@ -1650,29 +1106,13 @@ export default function PlanningBoard() {
 
                   className="rounded-2xl bg-[#5b351f] text-white hover:bg-[#3f2415]"
 
-                  onClick={
-
-                    loadPlanning
-
-                  }
+                  onClick={loadPlanning}
 
                   disabled={loading}
 
                 >
 
-                  <RefreshCw
-
-                    className={`mr-2 h-4 w-4 ${
-
-                      loading
-
-                        ? "animate-spin"
-
-                        : ""
-
-                    }`}
-
-                  />
+                  <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
 
                   Actualiser
 
@@ -1692,15 +1132,11 @@ export default function PlanningBoard() {
 
               <div>
 
-                <div className="text-sm font-black text-[#2d1b12]">
-
-                  Vue du planning
-
-                </div>
+                <div className="text-sm font-black text-[#2d1b12]">Vue du planning</div>
 
                 <div className="mt-1 text-xs text-[#7a5f4b]">
 
-                  Vue Manager pour tous les techniciens ou planning individuel.
+                  Tous les techniciens pour le Manager ou planning individuel.
 
                 </div>
 
@@ -1712,31 +1148,17 @@ export default function PlanningBoard() {
 
                 value={technicianFilter}
 
-                onChange={(event) =>
-
-                  setTechnicianFilter(event.target.value)
-
-                }
+                onChange={(event) => setTechnicianFilter(event.target.value)}
 
                 className="h-11 min-w-[280px] rounded-2xl border border-[#d8c4ad] bg-[#fffdf8] px-4 text-sm font-semibold text-[#5b351f]"
 
               >
 
-                <option value="ALL">
-
-                  Tous les techniciens — Vue Manager
-
-                </option>
+                <option value="ALL">Tous les techniciens - Vue Manager</option>
 
                 {technicians.map((technician) => (
 
-                  <option
-
-                    key={technician.id}
-
-                    value={technician.id}
-
-                  >
+                  <option key={technician.id} value={technician.id}>
 
                     {technician.displayName}
 
@@ -1752,67 +1174,21 @@ export default function PlanningBoard() {
 
             <div className="mb-5 text-lg font-black text-[#2d1b12]">
 
-              Semaine du{" "}
-
-              {formatLongDate(
-
-                weekStart,
-
-              )}{" "}
-
-              au{" "}
-
-              {formatLongDate(
-
-                addDays(
-
-                  weekStart,
-
-                  4,
-
-                ),
-
-              )}
+              Semaine du {formatLongDate(weekStart)} au {formatLongDate(addDays(weekStart, 4))}
 
             </div>
 
  
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
 
-              <StatBox
+              <StatBox title="Aujourd'hui" value={todayCount} subtitle="Interventions prévues" />
 
-                title="Aujourd’hui"
+              <StatBox title="Cette semaine" value={interventions.length} subtitle="Créneaux planifiés" />
 
-                value={todayCount}
+              <StatBox title="À planifier" value={unscheduled.length} subtitle="Sans créneau horaire" />
 
-                subtitle="Interventions prévues"
-
-              />
-
- 
-
-              <StatBox
-
-                title="Cette semaine"
-
-                value={plannedCount}
-
-                subtitle="Interventions enregistrées"
-
-              />
-
- 
-
-              <StatBox
-
-                title="À affecter"
-
-                value={unassignedCount}
-
-                subtitle="Sans technicien"
-
-              />
+              <StatBox title="Conflits" value={conflictCount} subtitle="Chevauchements détectés" />
 
             </div>
 
@@ -1826,11 +1202,7 @@ export default function PlanningBoard() {
 
           <Card className="rounded-3xl border-red-200 bg-red-50 shadow-sm">
 
-            <CardContent className="p-4 text-sm font-medium text-red-700">
-
-              {error}
-
-            </CardContent>
+            <CardContent className="p-4 text-sm font-medium text-red-700">{error}</CardContent>
 
           </Card>
 
@@ -1844,7 +1216,7 @@ export default function PlanningBoard() {
 
             {loading ? (
 
-              <div className="flex min-h-[400px] items-center justify-center text-sm text-[#7a5f4b]">
+              <div className="flex min-h-[500px] items-center justify-center text-sm text-[#7a5f4b]">
 
                 Chargement du planning...
 
@@ -1854,55 +1226,95 @@ export default function PlanningBoard() {
 
               <div className="overflow-x-auto">
 
-                <div className="grid min-w-[1100px] grid-cols-5 gap-3">
+                <div className="min-w-[1180px]">
 
-                  {weekDays.map(
+                  <div className="grid grid-cols-[72px_repeat(5,minmax(0,1fr))] gap-0">
 
-                    (
+                    <div className="border-b border-r border-[#e4d4c2] bg-[#fffaf3]" />
 
-                      day,
+                    {weekDays.map((day, dayIndex) => {
 
-                      dayIndex,
+                      const isToday = sameDay(day, today);
 
-                    ) => {
+                      return (
 
-                      const items =
+                        <div
 
-                        interventions.filter(
+                          key={day.toISOString()}
 
-                          (
+                          className={`border-b border-r border-[#e4d4c2] px-3 py-3 text-center ${
 
-                            intervention,
+                            isToday ? "bg-[#f8ecdf]" : "bg-white"
 
-                          ) =>
+                          }`}
 
-                            intervention.scheduledStart &&
+                        >
 
-                            sameDay(
+                          <div className="text-xs font-black uppercase tracking-wide text-[#5b351f]">
 
-                              new Date(
+                            {DAY_NAMES[dayIndex]}
 
-                                intervention.scheduledStart,
+                          </div>
 
-                              ),
+                          <div className="mt-1 text-lg font-black text-[#2d1b12]">{formatDay(day)}</div>
 
-                              day,
+                        </div>
 
-                            ),
+                      );
 
-                        );
+                    })}
 
  
 
-                      const isToday =
+                    <div className="relative border-r border-[#e4d4c2] bg-[#fffdf8]" style={{ height: `${agendaHeight}px` }}>
 
-                        sameDay(
+                      {hours.map((hour) => (
 
-                          day,
+                        <div
 
-                          today,
+                          key={hour}
 
-                        );
+                          className="absolute left-0 right-0 -translate-y-1/2 pr-2 text-right text-[11px] font-semibold text-[#9a8571]"
+
+                          style={{ top: `${(hour - START_HOUR) * HOUR_HEIGHT}px` }}
+
+                        >
+
+                          {String(hour).padStart(2, "0")}:00
+
+                        </div>
+
+                      ))}
+
+                    </div>
+
+ 
+
+                    {weekDays.map((day) => {
+
+                      const dayItems = addConflictFlags(
+
+                        interventions
+
+                          .filter(
+
+                            (intervention) =>
+
+                              intervention.scheduledStart &&
+
+                              sameDay(new Date(intervention.scheduledStart), day),
+
+                          )
+
+                          .sort(
+
+                            (first, second) =>
+
+                              new Date(first.scheduledStart) - new Date(second.scheduledStart),
+
+                          ),
+
+                      );
 
  
 
@@ -1910,133 +1322,43 @@ export default function PlanningBoard() {
 
                         <div
 
-                          key={
+                          key={`agenda-${day.toISOString()}`}
 
-                            day.toISOString()
+                          className="relative border-r border-[#e4d4c2] bg-white"
 
-                          }
+                          style={{
 
-                          className={`min-h-[520px] rounded-3xl border p-3 ${
+                            height: `${agendaHeight}px`,
 
-                            isToday
+                            backgroundImage:
 
-                              ? "border-[#5b351f] bg-[#f8ecdf]"
+                              "repeating-linear-gradient(to bottom, transparent 0, transparent 35px, #f3e8dc 36px, transparent 37px, transparent 71px, #e4d4c2 72px)",
 
-                              : "border-[#e4d4c2] bg-[#fffdf8]"
-
-                          }`}
+                          }}
 
                         >
 
-                          <div className="mb-4 border-b border-[#eadcc9] pb-3">
+                          {dayItems.map((intervention) => (
 
-                            <div className="text-sm font-black uppercase tracking-wide text-[#5b351f]">
+                            <AgendaEvent
 
-                              {
+                              key={intervention.id}
 
-                                DAY_NAMES[
+                              intervention={intervention}
 
-                                  dayIndex
+                              onClick={setSelectedIntervention}
 
-                                ]
+                            />
 
-                              }
-
-                            </div>
-
- 
-
-                            <div className="mt-1 text-xl font-black text-[#2d1b12]">
-
-                              {formatDay(
-
-                                day,
-
-                              )}
-
-                            </div>
-
- 
-
-                            <div className="mt-1 text-xs text-[#7a5f4b]">
-
-                              {items.length}{" "}
-
-                              intervention
-
-                              {items.length >
-
-                              1
-
-                                ? "s"
-
-                                : ""}
-
-                            </div>
-
-                          </div>
-
- 
-
-                          <div className="space-y-3">
-
-                            {items.length >
-
-                            0 ? (
-
-                              items.map(
-
-                                (
-
-                                  intervention,
-
-                                ) => (
-
-                                  <InterventionCard
-
-                                    key={
-
-                                      intervention.id
-
-                                    }
-
-                                    intervention={
-
-                                      intervention
-
-                                    }
-
-                                    onClick={
-
-                                      setSelectedIntervention
-
-                                    }
-
-                                  />
-
-                                ),
-
-                              )
-
-                            ) : (
-
-                              <div className="rounded-2xl border border-dashed border-[#d8c4ad] p-5 text-center text-xs text-[#9a8571]">
-
-                                Aucun créneau
-
-                              </div>
-
-                            )}
-
-                          </div>
+                          ))}
 
                         </div>
 
                       );
 
-                    },
+                    })}
 
-                  )}
+                  </div>
 
                 </div>
 
@@ -2050,69 +1372,35 @@ export default function PlanningBoard() {
 
  
 
-        {unscheduled.length >
-
-        0 ? (
+        {unscheduled.length > 0 ? (
 
           <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
 
             <CardHeader>
 
-              <CardTitle className="text-xl text-[#2d1b12]">
+              <CardTitle className="text-xl text-[#2d1b12]">À planifier</CardTitle>
 
-                À planifier
-
-              </CardTitle>
-
- 
-
-              <p className="text-sm text-[#7a5f4b]">
-
-                Interventions créées sans date ni heure.
-
-              </p>
+              <p className="text-sm text-[#7a5f4b]">Interventions créées sans date ni heure.</p>
 
             </CardHeader>
-
- 
 
             <CardContent>
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
 
-                {unscheduled.map(
+                {unscheduled.map((intervention) => (
 
-                  (
+                  <InterventionCard
 
-                    intervention,
+                    key={intervention.id}
 
-                  ) => (
+                    intervention={intervention}
 
-                    <InterventionCard
+                    onClick={setSelectedIntervention}
 
-                      key={
+                  />
 
-                        intervention.id
-
-                      }
-
-                      intervention={
-
-                        intervention
-
-                      }
-
-                      onClick={
-
-                        setSelectedIntervention
-
-                      }
-
-                    />
-
-                  ),
-
-                )}
+                ))}
 
               </div>
 
@@ -2128,69 +1416,13 @@ export default function PlanningBoard() {
 
       <InterventionDetail
 
-        intervention={
+        intervention={selectedIntervention}
 
-          selectedIntervention
-
-        }
-
-        onClose={() =>
-
-          setSelectedIntervention(
-
-            null,
-
-          )
-
-        }
+        onClose={() => setSelectedIntervention(null)}
 
       />
 
     </>
-
-  );
-
-}
-
- 
-
-function StatBox({
-
-  title,
-
-  value,
-
-  subtitle,
-
-}) {
-
-  return (
-
-    <div className="rounded-3xl border border-[#e4d4c2] bg-white p-5 shadow-sm">
-
-      <div className="text-sm font-bold text-[#7a5f4b]">
-
-        {title}
-
-      </div>
-
- 
-
-      <div className="mt-2 text-3xl font-black text-[#2d1b12]">
-
-        {value}
-
-      </div>
-
- 
-
-      <div className="mt-1 text-xs text-[#9a8571]">
-
-        {subtitle}
-
-      </div>
-
-    </div>
 
   );
 
