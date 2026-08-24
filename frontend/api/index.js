@@ -5404,9 +5404,9 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
         description,
 
-        technician?.id || null,
-
-        body.desiredDate ? `Date souhaitée: ${body.desiredDate}` : null,
+	technician?.user_profile_id || null,
+        
+	body.desiredDate ? `Date souhaitée: ${body.desiredDate}` : null,
 
       ],
 
@@ -5534,14 +5534,10 @@ app.patch("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
  
 
-    const assignedTechnicianId =
-
-      body.technician !== undefined || body.technicianId !== undefined
-
-        ? nextTech?.id || null
-
-        : current.assigned_technician_id;
-
+const assignedTechnicianId =
+  body.technician !== undefined || body.technicianId !== undefined
+    ? nextTech?.user_profile_id || null
+    : current.assigned_technician_id;
  
 
     await client.query(
@@ -5834,7 +5830,9 @@ function savInterventionSelectSql() {
 
     join public.machines m on m.id = t.machine_id
 
-    left join public.sav_technician_profiles stp on stp.id = i.assigned_technician_id and stp.deleted_at is null
+left join public.sav_technician_profiles stp
+  on stp.user_profile_id = t.assigned_technician_id
+  and stp.deleted_at is null
 
     left join public.sav_schedule_entries se on se.id = i.schedule_entry_id and se.deleted_at is null
 
@@ -6150,7 +6148,7 @@ app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
         dbLocation,
 
-        technician?.id || null,
+	technician?.user_profile_id || null,
 
         title,
 
@@ -6194,11 +6192,17 @@ app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
  
 
-    if (technician?.id && ticket.assigned_technician_id !== technician.id) {
-
-      await client.query(`update public.sav_tickets set assigned_technician_id=$1, updated_at=now() where id=$2`, [technician.id, ticket.id]);
-
-    }
+if (
+  technician?.user_profile_id &&
+  ticket.assigned_technician_id !== technician.user_profile_id
+) {
+  await client.query(
+    `update public.sav_tickets
+     set assigned_technician_id=$1, updated_at=now()
+     where id=$2`,
+    [technician.user_profile_id, ticket.id]
+  );
+}
 
  
 
