@@ -16,6 +16,8 @@ import {
 
   MapPin,
 
+  Move,
+
   Pencil,
 
   RefreshCw,
@@ -600,7 +602,77 @@ function buildScheduledTimes(date, time, durationMinutes) {
 
  
 
-function AgendaEvent({ intervention, onClick }) {
+function snapMinutesToQuarter(minutes) {
+
+  return Math.round(minutes / 15) * 15;
+
+}
+
+ 
+
+function dropTimesForDay(day, clientY, columnElement, durationMinutes) {
+
+  const rect = columnElement.getBoundingClientRect();
+
+  const relativeY = Math.max(0, Math.min(clientY - rect.top, rect.height));
+
+  const rawMinutes = START_HOUR * 60 + (relativeY / HOUR_HEIGHT) * 60;
+
+  const duration = Math.max(15, Number(durationMinutes) || 60);
+
+  const latestStart = END_HOUR * 60 - duration;
+
+  const snapped = snapMinutesToQuarter(rawMinutes);
+
+  const startMinutes = Math.max(
+
+    START_HOUR * 60,
+
+    Math.min(snapped, latestStart),
+
+  );
+
+ 
+
+  const start = new Date(day);
+
+  start.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+
+  const end = new Date(start.getTime() + duration * 60000);
+
+ 
+
+  return {
+
+    scheduledStart: start.toISOString(),
+
+    scheduledEnd: end.toISOString(),
+
+    previewTop: ((startMinutes - START_HOUR * 60) / 60) * HOUR_HEIGHT,
+
+    previewHeight: Math.max(MIN_EVENT_HEIGHT, (duration / 60) * HOUR_HEIGHT),
+
+  };
+
+}
+
+ 
+
+function AgendaEvent({
+
+  intervention,
+
+  onClick,
+
+  onDragStart,
+
+  onDragEnd,
+
+  isDragging,
+
+  isSaving,
+
+}) {
 
   const position = eventPosition(intervention);
 
@@ -614,9 +686,27 @@ function AgendaEvent({ intervention, onClick }) {
 
       type="button"
 
-      onClick={() => onClick(intervention)}
+      draggable={!isSaving}
 
-      className={`absolute left-1 right-1 overflow-hidden rounded-xl border bg-white px-2 py-1.5 text-left shadow-sm transition hover:z-30 hover:border-[#5b351f] hover:shadow-md ${
+      onDragStart={(event) => onDragStart(event, intervention)}
+
+      onDragEnd={onDragEnd}
+
+      onClick={() => {
+
+        if (!isDragging && !isSaving) onClick(intervention);
+
+      }}
+
+      className={`absolute left-1 right-1 overflow-hidden rounded-xl border bg-white px-2 py-1.5 text-left shadow-sm transition hover:z-30 hover:border-[#5b351f] hover:shadow-md cursor-grab active:cursor-grabbing ${
+
+        isDragging ? "opacity-40" : ""
+
+      } ${
+
+        isSaving ? "pointer-events-none opacity-60" : ""
+
+      } ${
 
         intervention.hasConflict
 
@@ -638,9 +728,15 @@ function AgendaEvent({ intervention, onClick }) {
 
       <div className="flex items-start justify-between gap-1">
 
-        <div className="min-w-0 text-[11px] font-black text-[#2d1b12]">
+        <div className="flex min-w-0 items-center gap-1 text-[11px] font-black text-[#2d1b12]">
 
-          {formatHour(intervention.scheduledStart)} - {formatHour(intervention.scheduledEnd)}
+          <Move className="h-3 w-3 shrink-0 text-[#9a8571]" />
+
+          <span className="truncate">
+
+            {formatHour(intervention.scheduledStart)} - {formatHour(intervention.scheduledEnd)}
+
+          </span>
 
         </div>
 
@@ -1374,6 +1470,14 @@ export default function PlanningBoard() {
 
   const [technicianFilter, setTechnicianFilter] = useState("ALL");
 
+  const [draggingIntervention, setDraggingIntervention] = useState(null);
+
+  const [dragPreview, setDragPreview] = useState(null);
+
+  const [savingDragId, setSavingDragId] = useState(null);
+
+  const [dragNotice, setDragNotice] = useState("");
+
  
 
   const weekDays = useMemo(
@@ -1537,6 +1641,174 @@ export default function PlanningBoard() {
  
 
   const conflictCount = interventions.filter((item) => item.hasConflict).length;
+
+ 
+
+  function handleDragStart(event, intervention) {
+
+    if (!intervention?.id || !intervention?.scheduledStart) return;
+
+    event.dataTransfer.effectAllowed = "move";
+
+    event.dataTransfer.setData("text/plain", String(intervention.id));
+
+    setDraggingIntervention(intervention);
+
+    setDragPreview(null);
+
+    setDragNotice("");
+
+  }
+
+ 
+
+  function handleDragEnd() {
+
+    setDraggingIntervention(null);
+
+    setDragPreview(null);
+
+  }
+
+ 
+
+  function handleDayDragOver(event, day) {
+
+    if (!draggingIntervention || savingDragId) return;
+
+    event.preventDefault();
+
+    event.dataTransfer.dropEffect = "move";
+
+ 
+
+    const duration = durationFromIntervention(draggingIntervention);
+
+    const times = dropTimesForDay(day, event.clientY, event.currentTarget, duration);
+
+    setDragPreview({
+
+      dayKey: day.toISOString(),
+
+      ...times,
+
+      technician: draggingIntervention.technician,
+
+      clientName: draggingIntervention.clientName,
+
+    });
+
+  }
+
+ 
+
+  function handleDayDragLeave(event) {
+
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+
+    setDragPreview(null);
+
+  }
+
+ 
+
+  async function handleDayDrop(event, day) {
+
+    event.preventDefault();
+
+    if (!draggingIntervention || savingDragId) return;
+
+ 
+
+    const intervention = draggingIntervention;
+
+    const duration = durationFromIntervention(intervention);
+
+    const times = dropTimesForDay(day, event.clientY, event.currentTarget, duration);
+
+ 
+
+    const previousStart = new Date(intervention.scheduledStart);
+
+    const nextStart = new Date(times.scheduledStart);
+
+    if (previousStart.getTime() === nextStart.getTime()) {
+
+      handleDragEnd();
+
+      return;
+
+    }
+
+ 
+
+    try {
+
+      setSavingDragId(intervention.id);
+
+      setDragNotice("Déplacement de l'intervention en cours...");
+
+      setError("");
+
+ 
+
+      await planningApiRequest(`/sav/interventions/${intervention.id}`, {
+
+        method: "PATCH",
+
+        body: {
+
+          scheduledStart: times.scheduledStart,
+
+          scheduledEnd: times.scheduledEnd,
+
+        },
+
+      });
+
+ 
+
+      setDragNotice(
+
+        `Intervention déplacée au ${new Date(times.scheduledStart).toLocaleDateString(
+
+          "fr-FR",
+
+        )} à ${formatHour(times.scheduledStart)}.`,
+
+      );
+
+      setSelectedIntervention(null);
+
+      await loadPlanning();
+
+    } catch (dropError) {
+
+      console.error("PLANNING DRAG DROP ERROR", dropError);
+
+      setError(
+
+        dropError?.statusCode === 409
+
+          ? dropError.message || "Conflit de planning : ce créneau est déjà occupé."
+
+          : dropError?.message || "Impossible de déplacer l'intervention.",
+
+      );
+
+      setDragNotice("");
+
+    } finally {
+
+      setSavingDragId(null);
+
+      setDraggingIntervention(null);
+
+      setDragPreview(null);
+
+    }
+
+  }
 
  
 
@@ -1746,6 +2018,34 @@ export default function PlanningBoard() {
 
  
 
+        <Card className="rounded-3xl border-[#d8c4ad] bg-white shadow-sm">
+
+          <CardContent className="flex flex-col gap-2 p-4 text-sm text-[#5b351f] md:flex-row md:items-center md:justify-between">
+
+            <div className="flex items-center gap-2">
+
+              <Move className="h-4 w-4" />
+
+              <span>
+
+                <strong>Déplacement rapide :</strong> glisse une intervention vers un autre jour ou une autre heure. Sa durée et son technicien sont conservés.
+
+              </span>
+
+            </div>
+
+            {dragNotice ? (
+
+              <span className="font-semibold text-emerald-700">{dragNotice}</span>
+
+            ) : null}
+
+          </CardContent>
+
+        </Card>
+
+ 
+
         {error ? (
 
           <Card className="rounded-3xl border-red-200 bg-red-50 shadow-sm">
@@ -1886,7 +2186,11 @@ export default function PlanningBoard() {
 
                           key={`agenda-${day.toISOString()}`}
 
-                          className="relative border-r border-[#e4d4c2] bg-white"
+                          className={`relative border-r border-[#e4d4c2] bg-white ${
+
+                            draggingIntervention ? "transition-colors hover:bg-[#fffaf3]" : ""
+
+                          }`}
 
                           style={{
 
@@ -1898,7 +2202,53 @@ export default function PlanningBoard() {
 
                           }}
 
+                          onDragOver={(event) => handleDayDragOver(event, day)}
+
+                          onDragLeave={handleDayDragLeave}
+
+                          onDrop={(event) => handleDayDrop(event, day)}
+
                         >
+
+                          {dragPreview?.dayKey === day.toISOString() ? (
+
+                            <div
+
+                              className="pointer-events-none absolute left-1 right-1 z-40 rounded-xl border-2 border-dashed border-[#5b351f] bg-[#f0dfcd]/80 px-2 py-1.5 shadow-lg"
+
+                              style={{
+
+                                top: `${dragPreview.previewTop}px`,
+
+                                height: `${dragPreview.previewHeight}px`,
+
+                              }}
+
+                            >
+
+                              <div className="text-[11px] font-black text-[#2d1b12]">
+
+                                {formatHour(dragPreview.scheduledStart)} - {formatHour(dragPreview.scheduledEnd)}
+
+                              </div>
+
+                              <div className="truncate text-xs font-bold text-[#5b351f]">
+
+                                {dragPreview.clientName || "Intervention"}
+
+                              </div>
+
+                              <div className="truncate text-[10px] text-[#7a5f4b]">
+
+                                {dragPreview.technician || "Technicien"}
+
+                              </div>
+
+                            </div>
+
+                          ) : null}
+
+ 
 
                           {dayItems.map((intervention) => (
 
@@ -1909,6 +2259,14 @@ export default function PlanningBoard() {
                               intervention={intervention}
 
                               onClick={setSelectedIntervention}
+
+                              onDragStart={handleDragStart}
+
+                              onDragEnd={handleDragEnd}
+
+                              isDragging={draggingIntervention?.id === intervention.id}
+
+                              isSaving={savingDragId === intervention.id}
 
                             />
 
