@@ -215,31 +215,50 @@ function sameDay(first, second) {
  
 
 function normalizePlanningEntry(entry) {
-
   return {
-
     ...entry,
 
-    scheduledStart: entry.scheduledStart || entry.startsAt || null,
+    // L'id utilisé par les actions frontend doit être celui
+    // de la véritable intervention SAV.
+    scheduleEntryId: entry.id || null,
+    id: entry.interventionId || entry.id,
 
-    scheduledEnd: entry.scheduledEnd || entry.endsAt || null,
+    interventionId:
+      entry.interventionId ||
+      null,
 
-    ticketReference: entry.ticketReference || null,
+    scheduledStart:
+      entry.scheduledStart ||
+      entry.startsAt ||
+      null,
 
-    ticketTitle: entry.ticketTitle || entry.title || null,
+    scheduledEnd:
+      entry.scheduledEnd ||
+      entry.endsAt ||
+      null,
 
-    interventionType: entry.interventionType || "REPARATION",
+    ticketReference:
+      entry.ticketReference ||
+      null,
 
-    status: entry.status || "PLANIFIEE",
+    ticketTitle:
+      entry.ticketTitle ||
+      entry.title ||
+      null,
 
-    ticketPriority: entry.ticketPriority || "NORMALE",
+    interventionType:
+      entry.interventionType ||
+      "REPARATION",
 
-    technician: entry.technician || "Technicien non affecté",
+    status:
+      entry.status ||
+      "PLANIFIEE",
 
+    ticketPriority:
+      entry.ticketPriority ||
+      "NORMALE",
   };
-
 }
-
  
 
 function statusLabel(status) {
