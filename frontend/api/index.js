@@ -5080,6 +5080,28 @@ function savTicketListSql(whereSql = "") {
 
       ) as "plannedRepairDate",
 
+      (
+        select i.planned_start_at
+        from public.sav_interventions i
+        where i.ticket_id = t.id
+          and i.deleted_at is null
+          and i.status not in ('CANCELLED','COMPLETED')
+          and i.planned_start_at is not null
+        order by i.planned_start_at asc
+        limit 1
+      ) as "plannedRepairStart",
+
+      (
+        select i.planned_end_at
+        from public.sav_interventions i
+        where i.ticket_id = t.id
+          and i.deleted_at is null
+          and i.status not in ('CANCELLED','COMPLETED')
+          and i.planned_start_at is not null
+        order by i.planned_start_at asc
+        limit 1
+      ) as "plannedRepairEnd",
+
       coalesce((
 
         select ce.payload->>'toQuoteStatus'
@@ -5100,6 +5122,8 @@ function savTicketListSql(whereSql = "") {
 
       ), 'A_FAIRE') as "quoteStatus",
 
+      t.opened_at as "openedAt",
+
       t.created_at as "createdAt",
 
       t.updated_at as "updatedAt",
@@ -5112,7 +5136,7 @@ function savTicketListSql(whereSql = "") {
 
     join public.machines m on m.id = t.machine_id
 
-    left join public.sav_technician_profiles stp on stp.id = t.assigned_technician_id and stp.deleted_at is null
+    left join public.sav_technician_profiles stp on stp.user_profile_id = t.assigned_technician_id and stp.deleted_at is null
 
     ${whereSql}
 
@@ -5404,9 +5428,9 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
         description,
 
-	technician?.user_profile_id || null,
+ technician?.user_profile_id || null,
         
-	body.desiredDate ? `Date souhaitée: ${body.desiredDate}` : null,
+ null,
 
       ],
 
@@ -6148,7 +6172,7 @@ app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
         dbLocation,
 
-	technician?.user_profile_id || null,
+ technician?.user_profile_id || null,
 
         title,
 
@@ -6354,7 +6378,7 @@ app.patch("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
         nextLocation,
 
-        technician?.id || null,
+        technician?.user_profile_id || null,
 
         nextTitle,
 
@@ -6390,10 +6414,16 @@ app.patch("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
  
 
-    if (technician?.id && ticket.assigned_technician_id !== technician.id) {
-
-      await client.query(`update public.sav_tickets set assigned_technician_id=$1, updated_at=now() where id=$2`, [technician.id, ticket.id]);
-
+    if (
+      technician?.user_profile_id &&
+      ticket.assigned_technician_id !== technician.user_profile_id
+    ) {
+      await client.query(
+        `update public.sav_tickets
+         set assigned_technician_id=$1, updated_at=now()
+         where id=$2`,
+        [technician.user_profile_id, ticket.id],
+      );
     }
 
  
