@@ -1,7 +1,3 @@
-import "dotenv/config";
-
- 
-
 import express from "express";
 
  
@@ -5069,6 +5065,8 @@ function savTicketListSql(whereSql = "") {
       end as status,
 
       stp.display_name as technician,
+
+      stp.id as "technicianId",
 
       null::date as "desiredDate",
 
