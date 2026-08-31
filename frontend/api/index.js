@@ -129,7 +129,149 @@ const crm = createCrmSdk({
 });
 
  
+async function syncSavInterventionToGoogle({
+  action,
+  intervention,
+  ticket,
+  technician,
+  googleEventId = null,
+}) {
+  try {
+    if (!technician?.user_profile_id) {
+      return {
+        ok: false,
+        skipped: true,
+        reason: "NO_TECHNICIAN",
+      };
+    }
 
+    if (
+      action !== "DELETE" &&
+      (!intervention?.planned_start_at ||
+        !intervention?.planned_end_at)
+    ) {
+      return {
+        ok: false,
+        skipped: true,
+        reason: "NOT_PLANNED",
+      };
+    }
+
+    if (action === "DELETE") {
+      if (!googleEventId) {
+        return {
+          ok: false,
+          skipped: true,
+          reason: "NO_GOOGLE_EVENT_ID",
+        };
+      }
+
+      const result =
+        await crm.calendar.deleteEvent({
+          userProfileId:
+            technician.user_profile_id,
+          googleEventId,
+        });
+
+      return {
+        ok: true,
+        result,
+      };
+    }
+
+    const summary =
+      `SAV - ${
+        ticket?.client_name ||
+        ticket?.clientName ||
+        "Client"
+      } - ${
+        intervention?.title ||
+        "Intervention"
+      }`;
+
+    const description = [
+      ticket?.ticket_number
+        ? `Ticket : ${ticket.ticket_number}`
+        : null,
+
+      intervention?.intervention_number
+        ? `Intervention : ${intervention.intervention_number}`
+        : null,
+
+      ticket?.machine_code
+        ? `Machine : ${ticket.machine_code}`
+        : null,
+
+      intervention?.description || null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const payload = {
+      userProfileId:
+        technician.user_profile_id,
+
+      summary,
+
+      description,
+
+      location:
+        intervention?.destination_address ||
+        null,
+
+      start:
+        intervention.planned_start_at,
+
+      end:
+        intervention.planned_end_at,
+    };
+
+    if (
+      action === "UPDATE" &&
+      googleEventId
+    ) {
+      const result =
+        await crm.calendar.updateEvent({
+          ...payload,
+          googleEventId,
+        });
+
+      return {
+        ok: true,
+        result,
+      };
+    }
+
+    const result =
+      await crm.calendar.createEvent(
+        payload,
+      );
+
+    return {
+      ok: true,
+      result,
+    };
+  } catch (error) {
+    console.error(
+      "[SAV GOOGLE CALENDAR SYNC]",
+      {
+        action,
+        interventionId:
+          intervention?.id || null,
+        technicianId:
+          technician?.id || null,
+        message:
+          error?.message ||
+          String(error),
+      },
+    );
+
+    return {
+      ok: false,
+      error,
+    };
+  }
+}
  
 
  
@@ -6192,27 +6334,29 @@ app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
  
 
-    const intervention = result.rows[0];
+const intervention = result.rows[0];
 
-    if (technician?.id && startsAt && endsAt) {
+let scheduleEntry = null;
 
-      await upsertScheduleEntry(client, {
+if (technician?.id && startsAt && endsAt) {
 
-        intervention,
+  scheduleEntry = await upsertScheduleEntry(client, {
 
-        ticket,
+    intervention,
 
-        technicianId: technician.id,
+    ticket,
 
-        title,
+    technicianId: technician.id,
 
-        startsAt,
+    title,
 
-        endsAt,
+    startsAt,
 
-      });
+    endsAt,
 
-    }
+  });
+
+}
 
  
 
@@ -6254,11 +6398,76 @@ if (
 
  
 
-    await client.query("commit");
+await client.query("commit");
 
-    const apiResult = await pool.query(`${savInterventionSelectSql()} where i.id=$1 limit 1`, [intervention.id]);
 
-    return res.status(201).json(apiResult.rows[0]);
+// ------------------------------------------------------------
+// Synchronisation Google Agenda
+// Non bloquante : l'intervention SAV reste créée si Google échoue.
+// ------------------------------------------------------------
+
+if (scheduleEntry && technician?.user_profile_id) {
+
+  const googleSync = await syncSavInterventionToGoogle({
+    action: "CREATE",
+    intervention: {
+      ...intervention,
+      planned_start_at: startsAt,
+      planned_end_at: endsAt,
+    },
+    ticket,
+    technician,
+  });
+
+  if (googleSync?.ok) {
+
+    const googleData =
+      googleSync.result?.data ||
+      googleSync.result ||
+      {};
+
+    const googleEventId =
+      googleData.googleEventId ||
+      googleData.eventId ||
+      googleData.id ||
+      null;
+
+    const googleEventLink =
+      googleData.googleEventLink ||
+      googleData.htmlLink ||
+      null;
+
+    if (googleEventId) {
+
+      await pool.query(
+        `
+        update public.sav_schedule_entries
+        set
+          google_calendar_event_id=$1,
+          google_calendar_html_link=$2,
+          updated_at=now()
+        where id=$3
+        `,
+        [
+          googleEventId,
+          googleEventLink,
+          scheduleEntry.id,
+        ],
+      );
+
+    }
+
+  }
+
+}
+
+
+const apiResult = await pool.query(
+  `${savInterventionSelectSql()} where i.id=$1 limit 1`,
+  [intervention.id]
+);
+
+return res.status(201).json(apiResult.rows[0]);
 
   } catch (error) {
 
@@ -6292,175 +6501,435 @@ app.patch("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
       await client.query("rollback");
 
-      return res.status(404).json({ error: "SAV_INTERVENTION_NOT_FOUND", message: "Intervention SAV introuvable." });
+      return res.status(404).json({
+        error: "SAV_INTERVENTION_NOT_FOUND",
+        message: "Intervention SAV introuvable.",
+      });
 
     }
-
- 
 
     const body = req.body || {};
 
     const ticket = await findSavTicket(current.ticket_id, client);
 
-    const technician = body.technician !== undefined || body.technicianId !== undefined
+    const technician =
+      body.technician !== undefined ||
+      body.technicianId !== undefined
+        ? await resolveSavTechnician(
+            body.technicianId ||
+              body.technician ||
+              null,
+            client,
+          )
+        : current.assigned_technician_id
+          ? await resolveSavTechnician(
+              current.assigned_technician_id,
+              client,
+            )
+          : null;
 
-      ? await resolveSavTechnician(body.technicianId || body.technician || null, client)
+    const nextStart =
+      body.scheduledStart !== undefined
+        ? normalizeIsoDateTime(
+            body.scheduledStart,
+            "scheduledStart",
+          )
+        : current.planned_start_at;
 
-      : current.assigned_technician_id
+    const nextEnd =
+      body.scheduledEnd !== undefined
+        ? normalizeIsoDateTime(
+            body.scheduledEnd,
+            "scheduledEnd",
+          )
+        : current.planned_end_at;
 
-        ? await resolveSavTechnician(current.assigned_technician_id, client)
-
-        : null;
-
- 
-
-    const nextStart = body.scheduledStart !== undefined ? normalizeIsoDateTime(body.scheduledStart, "scheduledStart") : current.planned_start_at;
-
-    const nextEnd = body.scheduledEnd !== undefined ? normalizeIsoDateTime(body.scheduledEnd, "scheduledEnd") : current.planned_end_at;
-
-    if (nextStart && nextEnd && new Date(nextEnd) <= new Date(nextStart)) {
+    if (
+      nextStart &&
+      nextEnd &&
+      new Date(nextEnd) <= new Date(nextStart)
+    ) {
 
       await client.query("rollback");
 
-      return res.status(400).json({ error: "INVALID_INTERVENTION_DATES", message: "L'heure de fin doit être postérieure à l'heure de début." });
+      return res.status(400).json({
+        error: "INVALID_INTERVENTION_DATES",
+        message:
+          "L'heure de fin doit être postérieure à l'heure de début.",
+      });
 
     }
 
- 
+    const nextStatus =
+      body.status !== undefined
+        ? dbInterventionStatusFromLegacy(body.status)
+        : current.status;
 
-    const nextStatus = body.status !== undefined ? dbInterventionStatusFromLegacy(body.status) : current.status;
+    const nextLocation =
+      body.locationType !== undefined
+        ? dbLocationTypeFromLegacy(body.locationType)
+        : current.location_type;
 
-    const nextLocation = body.locationType !== undefined ? dbLocationTypeFromLegacy(body.locationType) : current.location_type;
+    const nextTitle =
+      body.title !== undefined
+        ? String(body.title || current.title)
+        : current.title;
 
-    const nextTitle = body.title !== undefined ? String(body.title || current.title) : current.title;
 
- 
+    // ------------------------------------------------------------
+    // Mise à jour de l'intervention
+    // ------------------------------------------------------------
 
     await client.query(
-
       `
-
       update public.sav_interventions
 
       set
-
         status=$1::sav_intervention_status,
-
         location_type=$2::sav_intervention_location_type,
-
         assigned_technician_id=$3,
-
         title=$4,
-
         description=$5,
-
         planned_start_at=$6,
-
         planned_end_at=$7,
 
-        actual_start_at=case when $1='IN_PROGRESS' then coalesce(actual_start_at,now()) else actual_start_at end,
+        actual_start_at=
+          case
+            when $1='IN_PROGRESS'
+            then coalesce(actual_start_at,now())
+            else actual_start_at
+          end,
 
-        actual_end_at=case when $1='COMPLETED' then coalesce(actual_end_at,now()) else actual_end_at end,
+        actual_end_at=
+          case
+            when $1='COMPLETED'
+            then coalesce(actual_end_at,now())
+            else actual_end_at
+          end,
 
         destination_address=$8,
-
         technician_notes=$9,
-
         updated_at=now()
 
       where id=$10
-
       `,
-
       [
-
         nextStatus,
-
         nextLocation,
-
         technician?.user_profile_id || null,
-
         nextTitle,
 
-        body.description !== undefined ? body.description || null : current.description,
+        body.description !== undefined
+          ? body.description || null
+          : current.description,
 
         nextStart,
-
         nextEnd,
 
-        body.locationLabel !== undefined ? body.locationLabel || null : current.destination_address,
+        body.locationLabel !== undefined
+          ? body.locationLabel || null
+          : current.destination_address,
 
-        body.internalComment !== undefined ? body.internalComment || null : current.technician_notes,
+        body.internalComment !== undefined
+          ? body.internalComment || null
+          : current.technician_notes,
 
         current.id,
-
       ],
-
     );
 
- 
 
-    const updated = await findSavIntervention(current.id, client);
+    // ------------------------------------------------------------
+    // Recharge l'intervention mise à jour
+    // ------------------------------------------------------------
 
-    if (technician?.id && nextStart && nextEnd && nextStatus !== "CANCELLED") {
+    let updated = await findSavIntervention(
+      current.id,
+      client,
+    );
 
-      await upsertScheduleEntry(client, { intervention: updated, ticket, technicianId: technician.id, title: nextTitle, startsAt: nextStart, endsAt: nextEnd });
 
-    } else if (current.schedule_entry_id && nextStatus === "CANCELLED") {
+    // ------------------------------------------------------------
+    // Planning SAV
+    // ------------------------------------------------------------
 
-      await client.query(`update public.sav_schedule_entries set deleted_at=now(), updated_at=now() where id=$1`, [current.schedule_entry_id]);
+    if (
+      technician?.id &&
+      nextStart &&
+      nextEnd &&
+      nextStatus !== "CANCELLED"
+    ) {
+
+      await upsertScheduleEntry(client, {
+        intervention: updated,
+        ticket,
+        technicianId: technician.id,
+        title: nextTitle,
+        startsAt: nextStart,
+        endsAt: nextEnd,
+      });
+
+      // upsertScheduleEntry peut créer schedule_entry_id.
+      // On recharge donc l'intervention.
+      updated = await findSavIntervention(
+        current.id,
+        client,
+      );
+
+    } else if (
+      current.schedule_entry_id &&
+      nextStatus === "CANCELLED"
+    ) {
+
+      await client.query(
+        `
+        update public.sav_schedule_entries
+        set
+          deleted_at=now(),
+          updated_at=now()
+        where id=$1
+        `,
+        [current.schedule_entry_id],
+      );
 
     }
 
- 
+
+    // ------------------------------------------------------------
+    // Récupération des informations Google existantes
+    // ------------------------------------------------------------
+
+    const scheduleEntryResult =
+      updated?.schedule_entry_id
+        ? await client.query(
+            `
+            select
+              id,
+              google_calendar_event_id,
+              google_calendar_html_link
+            from public.sav_schedule_entries
+            where id=$1
+            limit 1
+            `,
+            [updated.schedule_entry_id],
+          )
+        : { rows: [] };
+
+    const currentScheduleEntry =
+      scheduleEntryResult.rows[0] || null;
+
+
+    // ------------------------------------------------------------
+    // Synchronisation du technicien sur le ticket
+    // ------------------------------------------------------------
 
     if (
       technician?.user_profile_id &&
-      ticket.assigned_technician_id !== technician.user_profile_id
+      ticket.assigned_technician_id !==
+        technician.user_profile_id
     ) {
+
       await client.query(
-        `update public.sav_tickets
-         set assigned_technician_id=$1, updated_at=now()
-         where id=$2`,
-        [technician.user_profile_id, ticket.id],
+        `
+        update public.sav_tickets
+        set
+          assigned_technician_id=$1,
+          updated_at=now()
+        where id=$2
+        `,
+        [
+          technician.user_profile_id,
+          ticket.id,
+        ],
       );
+
     }
 
- 
+
+    // ------------------------------------------------------------
+    // Historique SAV
+    // ------------------------------------------------------------
 
     await insertSavEvent(client, {
 
       ticketId: current.ticket_id,
 
-      eventType: current.status !== nextStatus ? "INTERVENTION_STATUS_CHANGE" : "INTERVENTION_UPDATED",
+      eventType:
+        current.status !== nextStatus
+          ? "INTERVENTION_STATUS_CHANGE"
+          : "INTERVENTION_UPDATED",
 
-      label: current.status !== nextStatus ? `Intervention : ${legacyInterventionStatusFromDb(current.status)} → ${legacyInterventionStatusFromDb(nextStatus)}` : "Intervention mise à jour",
+      label:
+        current.status !== nextStatus
+          ? `Intervention : ${legacyInterventionStatusFromDb(
+              current.status,
+            )} → ${legacyInterventionStatusFromDb(
+              nextStatus,
+            )}`
+          : "Intervention mise à jour",
 
-      comment: body.internalComment || null,
+      comment:
+        body.internalComment || null,
 
-      plannedRepairDate: nextStart ? String(nextStart).slice(0, 10) : null,
+      plannedRepairDate:
+        nextStart
+          ? String(nextStart).slice(0, 10)
+          : null,
 
-      actorName: getActorName(req),
+      actorName:
+        getActorName(req),
 
-      metadata: { interventionId: current.id, technicianId: technician?.id || null, scheduledStart: nextStart, scheduledEnd: nextEnd },
+      metadata: {
+        interventionId: current.id,
+        technicianId:
+          technician?.id || null,
+        scheduledStart: nextStart,
+        scheduledEnd: nextEnd,
+      },
 
     });
 
- 
+
+    // ------------------------------------------------------------
+    // La transaction Machines est validée AVANT Google
+    // ------------------------------------------------------------
 
     await client.query("commit");
 
-    const apiResult = await pool.query(`${savInterventionSelectSql()} where i.id=$1 limit 1`, [current.id]);
 
-    return res.json(apiResult.rows[0]);
+    // ------------------------------------------------------------
+    // Synchronisation CRM -> Google Agenda
+    //
+    // IMPORTANT :
+    // une erreur Google ne doit jamais annuler la modification SAV.
+    // ------------------------------------------------------------
+
+    if (
+      technician?.user_profile_id &&
+      nextStart &&
+      nextEnd &&
+      nextStatus !== "CANCELLED"
+    ) {
+
+      const googleSync =
+        await syncSavInterventionToGoogle({
+
+          action:
+            currentScheduleEntry
+              ?.google_calendar_event_id
+              ? "UPDATE"
+              : "CREATE",
+
+          intervention: {
+            ...updated,
+            planned_start_at: nextStart,
+            planned_end_at: nextEnd,
+          },
+
+          ticket,
+
+          technician,
+
+          googleEventId:
+            currentScheduleEntry
+              ?.google_calendar_event_id ||
+            null,
+
+        });
+
+
+      if (googleSync?.ok) {
+
+        const googleData =
+          googleSync.result?.data ||
+          googleSync.result ||
+          {};
+
+        const googleEventId =
+          googleData.googleEventId ||
+          googleData.eventId ||
+          googleData.id ||
+          currentScheduleEntry
+            ?.google_calendar_event_id ||
+          null;
+
+        const googleEventLink =
+          googleData.googleEventLink ||
+          googleData.htmlLink ||
+          currentScheduleEntry
+            ?.google_calendar_html_link ||
+          null;
+
+
+        if (
+          googleEventId &&
+          updated?.schedule_entry_id
+        ) {
+
+          await pool.query(
+            `
+            update public.sav_schedule_entries
+            set
+              google_calendar_event_id=$1,
+              google_calendar_html_link=$2,
+              updated_at=now()
+            where id=$3
+            `,
+            [
+              googleEventId,
+              googleEventLink,
+              updated.schedule_entry_id,
+            ],
+          );
+
+        }
+
+      }
+
+    }
+
+
+    // ------------------------------------------------------------
+    // Réponse API finale
+    // ------------------------------------------------------------
+
+    const apiResult =
+      await pool.query(
+        `${savInterventionSelectSql()} where i.id=$1 limit 1`,
+        [current.id],
+      );
+
+    return res.json(
+      apiResult.rows[0],
+    );
 
   } catch (error) {
 
     await client.query("rollback");
 
-    if (error.statusCode === 400 || error.statusCode === 409) return res.status(error.statusCode).json({ error: error.code || "SAV_INTERVENTION_BAD_REQUEST", message: error.message });
+    if (
+      error.statusCode === 400 ||
+      error.statusCode === 409
+    ) {
 
-    return errorResponse(res, error, "PATCH /api/sav/interventions/:id ERROR:");
+      return res
+        .status(error.statusCode)
+        .json({
+          error:
+            error.code ||
+            "SAV_INTERVENTION_BAD_REQUEST",
+
+          message:
+            error.message,
+        });
+
+    }
+
+    return errorResponse(
+      res,
+      error,
+      "PATCH /api/sav/interventions/:id ERROR:",
+    );
 
   } finally {
 
@@ -6469,7 +6938,6 @@ app.patch("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
   }
 
 });
-
  
 
 app.delete("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
@@ -6480,23 +6948,117 @@ app.delete("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
     await client.query("begin");
 
-    const current = await findSavIntervention(req.params.id, client);
+    const current = await findSavIntervention(
+      req.params.id,
+      client,
+    );
 
     if (!current) {
 
       await client.query("rollback");
 
-      return res.status(404).json({ error: "SAV_INTERVENTION_NOT_FOUND", message: "Intervention SAV introuvable." });
+      return res.status(404).json({
+        error: "SAV_INTERVENTION_NOT_FOUND",
+        message: "Intervention SAV introuvable.",
+      });
 
     }
+
+
+    // ------------------------------------------------------------
+    // Recuperation du ticket
+    // ------------------------------------------------------------
+
+    const ticket = await findSavTicket(
+      current.ticket_id,
+      client,
+    );
+
+
+    // ------------------------------------------------------------
+    // Recuperation du technicien
+    //
+    // assigned_technician_id contient le user_profiles.id
+    // ------------------------------------------------------------
+
+    const technician =
+      current.assigned_technician_id
+        ? await resolveSavTechnician(
+            current.assigned_technician_id,
+            client,
+          )
+        : null;
+
+
+    // ------------------------------------------------------------
+    // Recuperation de l'evenement Google AVANT suppression
+    // du planning.
+    // ------------------------------------------------------------
+
+    let scheduleEntry = null;
 
     if (current.schedule_entry_id) {
 
-      await client.query(`update public.sav_schedule_entries set deleted_at=now(), updated_at=now() where id=$1`, [current.schedule_entry_id]);
+      const scheduleEntryResult =
+        await client.query(
+          `
+          select
+            id,
+            google_calendar_event_id,
+            google_calendar_html_link
+          from public.sav_schedule_entries
+          where id=$1
+          limit 1
+          `,
+          [current.schedule_entry_id],
+        );
+
+      scheduleEntry =
+        scheduleEntryResult.rows[0] || null;
 
     }
 
-    await client.query(`update public.sav_interventions set deleted_at=now(), updated_at=now(), status='CANCELLED' where id=$1`, [current.id]);
+
+    // ------------------------------------------------------------
+    // Suppression logique du planning Machines
+    // ------------------------------------------------------------
+
+    if (current.schedule_entry_id) {
+
+      await client.query(
+        `
+        update public.sav_schedule_entries
+        set
+          deleted_at=now(),
+          updated_at=now()
+        where id=$1
+        `,
+        [current.schedule_entry_id],
+      );
+
+    }
+
+
+    // ------------------------------------------------------------
+    // Suppression logique / annulation de l'intervention
+    // ------------------------------------------------------------
+
+    await client.query(
+      `
+      update public.sav_interventions
+      set
+        deleted_at=now(),
+        updated_at=now(),
+        status='CANCELLED'
+      where id=$1
+      `,
+      [current.id],
+    );
+
+
+    // ------------------------------------------------------------
+    // Historique SAV
+    // ------------------------------------------------------------
 
     await insertSavEvent(client, {
 
@@ -6504,25 +7066,86 @@ app.delete("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
       eventType: "INTERVENTION_DELETED",
 
-      label: "Intervention supprimée",
+      label: "Intervention supprimee",
 
-      comment: current.technician_notes || null,
+      comment:
+        current.technician_notes || null,
 
-      actorName: getActorName(req),
+      actorName:
+        getActorName(req),
 
-      metadata: { interventionId: current.id, scheduledStart: current.planned_start_at, scheduledEnd: current.planned_end_at },
+      metadata: {
+        interventionId:
+          current.id,
+
+        scheduledStart:
+          current.planned_start_at,
+
+        scheduledEnd:
+          current.planned_end_at,
+
+        googleEventId:
+          scheduleEntry?.google_calendar_event_id ||
+          null,
+      },
 
     });
 
+
+    // ------------------------------------------------------------
+    // IMPORTANT :
+    // Machines est valide AVANT d'appeler Google.
+    // Une panne Google ne doit jamais bloquer le SAV.
+    // ------------------------------------------------------------
+
     await client.query("commit");
 
-    return res.json({ ok: true, deletedInterventionId: current.id });
+
+    // ------------------------------------------------------------
+    // Suppression dans Google Agenda
+    // ------------------------------------------------------------
+
+    if (
+      technician?.user_profile_id &&
+      scheduleEntry?.google_calendar_event_id
+    ) {
+
+      await syncSavInterventionToGoogle({
+
+        action: "DELETE",
+
+        intervention: current,
+
+        ticket,
+
+        technician,
+
+        googleEventId:
+          scheduleEntry.google_calendar_event_id,
+
+      });
+
+    }
+
+
+    // ------------------------------------------------------------
+    // Reponse API
+    // ------------------------------------------------------------
+
+    return res.json({
+      ok: true,
+      deletedInterventionId: current.id,
+    });
 
   } catch (error) {
 
     await client.query("rollback");
 
-    return errorResponse(res, error, "DELETE /api/sav/interventions/:id ERROR:");
+    return errorResponse(
+      res,
+      error,
+      "DELETE /api/sav/interventions/:id ERROR:",
+    );
 
   } finally {
 
@@ -6531,7 +7154,6 @@ app.delete("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
   }
 
 });
-
  
 
 app.get("/api/sav/planning", requireAdmin, async (req, res) => {
