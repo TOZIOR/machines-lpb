@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Package, UserRound, Wrench, Search, Plus, ArrowRightLeft, MapPin,
-  CalendarDays, Building2, RefreshCw, Link2, ShieldCheck, PlugZap,
-  Boxes, Wifi, WifiOff, Download, Printer, Trash2,
+  CalendarDays, Building2, RefreshCw, Link2,
+  Boxes, Download, Printer, Trash2,
 } from "lucide-react";
 import QRCodeLib from "qrcode";
 import { QRCodeSVG } from "qrcode.react";
@@ -262,7 +262,6 @@ function handleLogout() {
   const [machines, setMachines] = useState([]);
   const [movements, setMovements] = useState([]);
 
-  const [pennylaneStatus, setPennylaneStatus] = useState({ connected: false, lastSyncAt: "" });
   const [pennylaneCustomers, setPennylaneCustomers] = useState([]);
   const [pennylaneProducts, setPennylaneProducts] = useState([]);
   const [pennylaneInvoices, setPennylaneInvoices] = useState([]);
@@ -278,7 +277,6 @@ function handleLogout() {
   const [showMachineForm, setShowMachineForm] = useState(false);
   
   const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const [machineForm, setMachineForm] = useState({
@@ -412,32 +410,14 @@ function handleLogout() {
     // =========================================================
 
     const [
-      pennylaneStatusResult,
       pennylaneCustomersResult,
       pennylaneProductsResult,
       pennylaneInvoicesResult,
     ] = await Promise.allSettled([
-      apiFetch("/pennylane/status"),
       apiFetch("/pennylane/customers"),
       apiFetch("/pennylane/products"),
       apiFetch("/pennylane/invoices"),
     ]);
-
-    if (pennylaneStatusResult.status === "fulfilled") {
-      setPennylaneStatus(pennylaneStatusResult.value || {
-        connected: false,
-        lastSyncAt: "",
-      });
-    } else {
-      console.error(
-        "PENNYLANE STATUS ERROR",
-        pennylaneStatusResult.reason
-      );
-      setPennylaneStatus({
-        connected: false,
-        lastSyncAt: "",
-      });
-    }
 
     if (pennylaneCustomersResult.status === "fulfilled") {
       setPennylaneCustomers(
@@ -634,33 +614,6 @@ function handleLogout() {
     maintenance: machines.filter((m) => m.statut === "En maintenance").length,
   }), [machines]);
 
-  async function connectPennylane() {
-    try {
-      setErrorMessage("");
-      setPennylaneStatus(await apiFetch("/pennylane/connect", { method: "POST" }));
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error.message);
-    }
-  }
-
-  async function syncPennylaneData() {
-    try {
-      setErrorMessage("");
-      setIsSyncing(true);
-      const result = await apiFetch("/pennylane/sync/customers", { method: "POST" });
-      setPennylaneStatus({ connected: true, lastSyncAt: result.lastSyncAt || "" });
-      await loadAllData();
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error.message);
-    } finally {
-      setIsSyncing(false);
-    }
-  }
-
-  
-
   async function createMachine() {
     try {
       setErrorMessage("");
@@ -769,9 +722,11 @@ function handleLogout() {
     if (!selectedMachine) return;
 
     const machineCode = getMachineCode(selectedMachine);
-    const confirmed = window.confirm(
-      `Supprimer définitivement la machine ${machineCode} et tout son historique ?`,
-    );
+   const confirmed = window.confirm(
+  `Supprimer définitivement la machine ${machineCode} ?
+
+Cette opération est possible uniquement si la machine ne possède aucun historique SAV.`,
+);
 
     if (!confirmed) return;
 
@@ -864,7 +819,7 @@ if (!isAuthenticated) {
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <h1 className="text-3xl font-extrabold tracking-tight">LPB Machines</h1>
-                <p className="mt-1 text-sm text-[#eadcc9]">Gestion du parc machines · Supabase · Pennylane</p>
+                <p className="mt-1 text-sm text-[#eadcc9]">Gestion du parc machines · Supabase · CRM LPB</p>
               </div>
 
               <div className="flex flex-col gap-3 md:flex-row md:items-center">
@@ -876,13 +831,6 @@ if (!isAuthenticated) {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
-                </div>
-
-                <div className="rounded-2xl bg-white px-5 py-3 text-sm text-[#5b351f] shadow-sm">
-                  <div className="text-xs text-[#7a5f4b]">Connexion</div>
-                  <div className="font-bold">
-                    {pennylaneStatus.connected ? "Pennylane connecté" : "Pennylane non connecté"}
-                  </div>
                 </div>
 
 <Button
@@ -912,52 +860,6 @@ if (!isAuthenticated) {
                 <CardContent className="p-4 text-sm text-red-700">{errorMessage}</CardContent>
               </Card>
             ) : null}
-
-            <Card className="rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
-              <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className={`rounded-2xl p-3 ${pennylaneStatus.connected ? "bg-emerald-100" : "bg-[#f0dfcd]"}`}>
-                    {pennylaneStatus.connected ? (
-                      <ShieldCheck className="h-5 w-5 text-emerald-700" />
-                    ) : (
-                      <PlugZap className="h-5 w-5 text-[#5b351f]" />
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 text-lg font-bold text-[#2d1b12]">
-                      Connexion Pennylane
-                      {pennylaneStatus.connected ? (
-                        <Wifi className="h-4 w-4 text-emerald-600" />
-                      ) : (
-                        <WifiOff className="h-4 w-4 text-[#9a8571]" />
-                      )}
-                    </div>
-                    <p className="text-sm text-[#7a5f4b]">
-                      {pennylaneStatus.connected
-                        ? `Connecté. Dernière synchronisation : ${pennylaneStatus.lastSyncAt || "jamais"}`
-                        : "Non connecté. Clique pour simuler le branchement OAuth."}
-                    </p>
-                  </div>
-                </div>
-
-                {!pennylaneStatus.connected ? (
-                  <Button className="rounded-2xl bg-[#5b351f] px-5 text-white hover:bg-[#3f2415]" onClick={connectPennylane}>
-                    <PlugZap className="mr-2 h-4 w-4" />
-                    Connecter Pennylane
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    className="rounded-2xl border-[#5b351f] bg-[#fffdf8] px-5 text-[#5b351f] hover:bg-[#f0dfcd]"
-                    onClick={syncPennylaneData}
-                    disabled={isSyncing}
-                  >
-                    <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
-                    Synchroniser
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
 
             <div className="grid gap-4 md:grid-cols-4">
               <StatCard title="Machines" value={stats.total} icon={Package} />

@@ -4429,322 +4429,194 @@ app.patch(
 );
 
  
-
 app.delete(
-
- 
-
   "/api/machines/:id",
-
- 
-
   requireAdmin,
-
- 
-
   async (req, res) => {
-
- 
-
-    const client =
-
- 
-
-      await pool.connect();
-
- 
-
- 
-
- 
+    const client = await pool.connect();
 
     try {
-
- 
-
-      await client.query(
-
- 
-
-        "begin",
-
- 
-
-      );
-
- 
-
- 
-
- 
+      await client.query("begin");
 
       const machine =
-
- 
-
         await findMachineByCodeOrUuid(
-
- 
-
           req.params.id,
-
- 
-
           client,
-
- 
-
         );
-
- 
-
- 
-
- 
 
       if (!machine) {
-
- 
-
-        await client.query(
-
- 
-
-          "rollback",
-
- 
-
-        );
-
- 
-
- 
-
- 
+        await client.query("rollback");
 
         return res
-
- 
-
           .status(404)
-
- 
-
           .json({
-
- 
-
-            error:
-
- 
-
-              "Machine not found",
-
- 
-
- 
-
- 
-
+            error: "MACHINE_NOT_FOUND",
             message:
-
- 
-
               "Machine introuvable.",
-
- 
-
           });
-
- 
-
       }
 
- 
+      // ------------------------------------------------------------
+      // Protection de l'historique SAV
+      //
+      // Une machine ayant déjà été liée à un ticket SAV ne doit jamais
+      // être supprimée physiquement. Même un ticket supprimé logiquement
+      // fait partie de la traçabilité technique de la machine.
+      // ------------------------------------------------------------
 
- 
+      const savTicketsResult =
+        await client.query(
+          `
+          select count(*)::int as count
+          from public.sav_tickets
+          where machine_id = $1
+          `,
+          [machine.id],
+        );
 
- 
+      const savTicketsCount =
+        Number(
+          savTicketsResult.rows[0]
+            ?.count || 0,
+        );
+
+      if (savTicketsCount > 0) {
+        await client.query("rollback");
+
+        return res
+          .status(409)
+          .json({
+            error:
+              "MACHINE_HAS_SAV_HISTORY",
+
+            message:
+              "Cette machine possède un historique SAV et ne peut pas être supprimée. Passez-la en « Hors service » afin de conserver sa traçabilité.",
+
+            machineId:
+              machine.id,
+
+            machineCode:
+              machine.code,
+
+            savTicketsCount,
+          });
+      }
+
+      // ------------------------------------------------------------
+      // Suppression de l'historique de mouvements
+      //
+      // Cette suppression n'est réalisée que pour une machine qui n'a
+      // jamais été impliquée dans un dossier SAV.
+      // ------------------------------------------------------------
 
       await client.query(
-
- 
-
         `
-
- 
-
         delete
-
- 
-
-        from machine_movements
-
- 
-
+        from public.machine_movements
         where machine_id = $1
-
- 
-
         `,
-
- 
-
         [machine.id],
-
- 
-
       );
 
- 
+      // ------------------------------------------------------------
+      // Suppression définitive de la machine
+      // ------------------------------------------------------------
 
- 
+      const deleteResult =
+        await client.query(
+          `
+          delete
+          from public.machines
+          where id = $1
+          returning id, code
+          `,
+          [machine.id],
+        );
 
- 
+      if (
+        deleteResult.rowCount === 0
+      ) {
+        await client.query(
+          "rollback",
+        );
 
-      await client.query(
+        return res
+          .status(404)
+          .json({
+            error:
+              "MACHINE_NOT_FOUND",
 
- 
-
-        `
-
- 
-
-        delete
-
- 
-
-        from machines
-
- 
-
-        where id = $1
-
- 
-
-        `,
-
- 
-
-        [machine.id],
-
- 
-
-      );
-
- 
-
- 
-
- 
+            message:
+              "La machine n'existe plus ou a déjà été supprimée.",
+          });
+      }
 
       await client.query(
-
- 
-
         "commit",
-
- 
-
       );
-
- 
-
- 
-
- 
 
       return res.json({
-
- 
-
         ok: true,
 
- 
-
         deletedMachineId:
-
- 
-
           machine.id,
 
- 
-
         deletedMachineCode:
-
- 
-
           machine.code,
-
- 
-
       });
-
- 
-
     } catch (error) {
+      try {
+        await client.query(
+          "rollback",
+        );
+      } catch (
+        rollbackError
+      ) {
+        console.error(
+          "ROLLBACK DELETE MACHINE ERROR:",
+          rollbackError,
+        );
+      }
 
- 
-
-      await client.query(
-
- 
-
-        "rollback",
-
- 
-
-      );
-
- 
-
- 
-
- 
-
-      return errorResponse(
-
- 
-
-        res,
-
- 
-
-        error,
-
- 
-
+      console.error(
         "DELETE /api/machines/:id ERROR:",
-
- 
-
+        error,
       );
 
- 
+      if (
+        error?.code ===
+        "23503"
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "MACHINE_HAS_DEPENDENCIES",
 
+            message:
+              "Cette machine possède encore des données liées et ne peut pas être supprimée. Passez-la en « Hors service » pour conserver son historique.",
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          error:
+            error?.code ||
+            "MACHINE_DELETE_ERROR",
+
+          message:
+            "Impossible de supprimer la machine.",
+
+          detail:
+            error?.detail ||
+            null,
+        });
     } finally {
-
- 
-
       client.release();
-
- 
-
     }
-
- 
-
   },
-
- 
-
 );
-
- 
-
- 
-
- 
 
 function legacyTicketStatusFromDb(status) {
 
