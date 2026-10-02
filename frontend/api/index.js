@@ -1,134 +1,156 @@
 import express from "express";
+import { createClient } from "@supabase/supabase-js";
 
- 
 
 import cors from "cors";
 
- 
+
 
 import pg from "pg";
 
- 
+
 
 import { createCrmSdk } from "./crm.js";
 
- 
 
- 
 
- 
+
+
+
 
 const { Pool } = pg;
 
- 
+
 
 const app = express();
 
- 
 
- 
 
- 
+
+
+
 
 const APP_BASE_URL =
 
- 
+
 
   process.env.APP_BASE_URL || "http://localhost:5173";
 
- 
 
- 
 
- 
+
+
+
 
 const ADMIN_API_KEY =
 
- 
+
 
   process.env.ADMIN_API_KEY || "change-me";
 
- 
 
- 
 
- 
+
+
+
 
 const CRM_API_URL =
 
- 
+
 
   process.env.CRM_API_URL || "";
 
- 
 
- 
 
- 
+
+
+
 
 const CRM_API_KEY =
 
- 
+
 
   process.env.LPB_PLATFORM_API_KEY ||
 
- 
+
 
   process.env.CRM_API_KEY ||
 
- 
+
 
   "";
 
- 
 
- 
 
- 
+
+
+
 
 const CRM_CLIENTS_PATH =
 
- 
+
 
   process.env.CRM_CLIENTS_PATH || "/api/clients";
 
- 
 
- 
 
- 
+
+
+
 
 const CRON_API_KEY =
 
- 
+
 
   process.env.CRON_API_KEY || "";
 
- 
 
- 
 
- 
+const SUPABASE_URL =
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  "";
+
+const SUPABASE_ANON_KEY =
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  "";
+
+const supabaseAuth =
+  SUPABASE_URL && SUPABASE_ANON_KEY
+    ? createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+          },
+        },
+      )
+    : null;
+
+
 
 const crm = createCrmSdk({
 
- 
+
 
   baseUrl: CRM_API_URL,
 
- 
+
 
   apiKey: CRM_API_KEY,
 
- 
+
 
   clientsPath: CRM_CLIENTS_PATH,
 
- 
+
 
 });
 
- 
+
 async function syncSavInterventionToGoogle({
   action,
   intervention,
@@ -272,817 +294,866 @@ async function syncSavInterventionToGoogle({
     };
   }
 }
- 
 
- 
+
+
 
 const pool = new Pool({
 
- 
+
 
   connectionString: process.env.DATABASE_URL,
 
- 
+
 
   ssl: {
 
- 
+
 
     rejectUnauthorized: false,
 
- 
+
 
   },
 
- 
+
 
 });
 
- 
 
- 
 
- 
+
+
+
 
 app.use(cors());
 
- 
+
 
 app.use(express.json());
 
- 
 
- 
 
- 
+
+
+
 
 function errorResponse(
 
- 
+
 
   res,
 
- 
+
 
   error,
 
- 
+
 
   label = "API ERROR",
 
- 
+
 
 ) {
 
- 
+
 
   console.error(label, error);
 
- 
 
- 
 
- 
+
+
+
 
   return res.status(500).json({
 
- 
+
 
     error: error.message,
 
- 
+
 
     detail: error.detail || null,
 
- 
+
 
     hint: error.hint || null,
 
- 
+
 
     code: error.code || null,
 
- 
+
 
   });
 
- 
+
 
 }
 
- 
 
- 
 
- 
 
-function requireAdmin(req, res, next) {
 
- 
 
-  const apiKey = req.header("x-api-key");
 
- 
+async function requireAdmin(
+  req,
+  res,
+  next,
+) {
+  try {
+    // ------------------------------------------------------------
+    // 1. Communication serveur-à-serveur
+    // ------------------------------------------------------------
 
- 
+    const apiKey =
+      req.header("x-api-key");
 
- 
+    if (
+      apiKey &&
+      apiKey === ADMIN_API_KEY
+    ) {
+      req.auth = {
+        type: "service",
+      };
 
-  if (
+      return next();
+    }
 
- 
+    // ------------------------------------------------------------
+    // 2. Utilisateur LPB connecté via Supabase Auth du CRM
+    // ------------------------------------------------------------
 
-    !apiKey ||
+    const authorization =
+      req.header("authorization") || "";
 
- 
+    if (
+      !authorization.startsWith(
+        "Bearer ",
+      )
+    ) {
+      return res
+        .status(401)
+        .json({
+          error: "Unauthorized",
+          message:
+            "Connexion requise.",
+        });
+    }
 
-    apiKey !== ADMIN_API_KEY
+    if (!supabaseAuth) {
+      console.error(
+        "SUPABASE AUTH CONFIGURATION MISSING",
+      );
 
- 
+      return res
+        .status(500)
+        .json({
+          error:
+            "AUTH_CONFIGURATION_ERROR",
+          message:
+            "Le service d'authentification n'est pas configuré.",
+        });
+    }
 
-  ) {
+    const accessToken =
+      authorization
+        .slice("Bearer ".length)
+        .trim();
 
- 
+    const {
+      data: { user },
+      error,
+    } =
+      await supabaseAuth.auth.getUser(
+        accessToken,
+      );
 
-    return res.status(401).json({
+    if (error || !user) {
+      console.error(
+        "SUPABASE AUTH ERROR",
+        error,
+      );
 
- 
+      return res
+        .status(401)
+        .json({
+          error: "Unauthorized",
+          message:
+            "Session invalide ou expirée.",
+        });
+    }
 
-      error: "Unauthorized",
+    req.auth = {
+      type: "user",
+      userId: user.id,
+      email:
+        user.email || null,
+      user,
+    };
 
- 
+    return next();
+  } catch (error) {
+    console.error(
+      "AUTH MIDDLEWARE ERROR:",
+      error,
+    );
 
-      message:
-
- 
-
-        "Clé API absente ou incorrecte.",
-
- 
-
-    });
-
- 
-
+    return res
+      .status(401)
+      .json({
+        error: "Unauthorized",
+        message:
+          "Impossible de vérifier la session.",
+      });
   }
-
- 
-
- 
-
- 
-
-  next();
-
- 
-
 }
 
- 
 
- 
 
- 
+
 
 function requireCron(req, res, next) {
 
- 
+
 
   const apiKey = req.header("x-api-key");
 
- 
 
- 
 
- 
+
+
+
 
   if (
 
- 
+
 
     !CRON_API_KEY ||
 
- 
+
 
     !apiKey ||
 
- 
+
 
     apiKey !== CRON_API_KEY
 
- 
+
 
   ) {
 
- 
+
 
     return res.status(401).json({
 
- 
+
 
       error: "Unauthorized",
 
- 
+
 
       message:
 
- 
+
 
         "Clé Cron absente ou incorrecte.",
 
- 
+
 
     });
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   next();
 
- 
+
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 function normalizePreventiveLimit(
 
- 
+
 
   value,
 
- 
+
 
   defaultValue = 200,
 
- 
+
 
 ) {
 
- 
+
 
   if (
 
- 
+
 
     value === undefined ||
 
- 
+
 
     value === null ||
 
- 
+
 
     value === ""
 
- 
+
 
   ) {
 
- 
+
 
     return defaultValue;
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   const parsed = Number.parseInt(
 
- 
+
 
     String(value),
 
- 
+
 
     10,
 
- 
+
 
   );
 
- 
 
- 
 
- 
+
+
+
 
   if (
 
- 
+
 
     !Number.isInteger(parsed) ||
 
- 
+
 
     parsed < 1 ||
 
- 
+
 
     parsed > 1000
 
- 
+
 
   ) {
 
- 
+
 
     const error = new Error(
 
- 
+
 
       "La limite doit être un entier compris entre 1 et 1000.",
 
- 
+
 
     );
 
- 
 
- 
 
- 
+
+
+
 
     error.statusCode = 400;
 
- 
 
- 
 
- 
+
+
+
 
     throw error;
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   return parsed;
 
- 
+
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 function toSqlDate(value) {
 
- 
+
 
   if (!value) return null;
 
- 
 
- 
 
- 
+
+
+
 
   if (
 
- 
+
 
     /^\d{4}-\d{2}-\d{2}$/.test(value)
 
- 
+
 
   ) {
 
- 
+
 
     return value;
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   if (
 
- 
+
 
     /^\d{2}\/\d{2}\/\d{4}$/.test(value)
 
- 
+
 
   ) {
 
- 
+
 
     const [dd, mm, yyyy] =
 
- 
+
 
       value.split("/");
 
- 
 
- 
 
- 
+
+
+
 
     return `${yyyy}-${mm}-${dd}`;
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   const parsed = new Date(value);
 
- 
 
- 
 
- 
+
+
+
 
   if (
 
- 
+
 
     !Number.isNaN(parsed.getTime())
 
- 
+
 
   ) {
 
- 
+
 
     return parsed
 
- 
+
 
       .toISOString()
 
- 
+
 
       .slice(0, 10);
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   return null;
 
- 
+
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 function normalizePreventiveReferenceDate(
 
- 
+
 
   value,
 
- 
+
 
 ) {
 
- 
+
 
   if (!value) {
 
- 
+
 
     return null;
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   const parsed = toSqlDate(value);
 
- 
 
- 
 
- 
+
+
+
 
   if (!parsed) {
 
- 
+
 
     const error = new Error(
 
- 
+
 
       "referenceDate doit être une date valide au format YYYY-MM-DD.",
 
- 
+
 
     );
 
- 
 
- 
 
- 
+
+
+
 
     error.statusCode = 400;
 
- 
 
- 
 
- 
+
+
+
 
     throw error;
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   return parsed;
 
- 
+
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 async function generatePreventiveTickets(
 
- 
+
 
   req,
 
- 
+
 
   res,
 
- 
+
 
 ) {
 
- 
+
 
   try {
 
- 
+
 
     const limit =
 
- 
+
 
       normalizePreventiveLimit(
 
- 
+
 
         req.body?.limit,
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
     const referenceDate =
 
- 
+
 
       normalizePreventiveReferenceDate(
 
- 
+
 
         req.body?.referenceDate,
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
     const result = await pool.query(
 
- 
+
 
       `
 
- 
+
 
       select *
 
- 
+
 
       from public.generate_due_sav_preventive_tickets(
 
- 
+
 
         $1::integer,
 
- 
+
 
         $2::date
 
- 
+
 
       )
 
- 
+
 
       `,
 
- 
+
 
       [
 
- 
+
 
         limit,
 
- 
+
 
         referenceDate,
 
- 
+
 
       ],
 
- 
+
 
     );
 
- 
 
- 
 
- 
+
+
+
 
     return res.json({
 
- 
+
 
       ok: true,
 
- 
+
 
       limit,
 
- 
+
 
       referenceDate,
 
- 
+
 
       count: result.rows.length,
 
- 
+
 
       results: result.rows,
 
- 
+
 
     });
 
- 
+
 
   } catch (error) {
 
- 
+
 
     if (
 
- 
+
 
       error.statusCode === 400
 
- 
+
 
     ) {
 
- 
+
 
       return res
 
- 
+
 
         .status(400)
 
- 
+
 
         .json({
 
- 
+
 
           error: error.message,
 
- 
+
 
         });
 
- 
+
 
     }
 
- 
 
- 
 
- 
+
+
+
 
     return errorResponse(
 
- 
+
 
       res,
 
- 
+
 
       error,
 
- 
+
 
       "POST preventive generation ERROR:",
 
- 
+
 
     );
 
- 
+
 
   }
 
- 
+
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 function machineSelectSql() {
 
@@ -1150,2885 +1221,2885 @@ function machineSelectSql() {
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 async function findMachineByCodeOrUuid(
 
- 
+
 
   value,
 
- 
+
 
   db = pool,
 
- 
+
 
 ) {
 
- 
+
 
   const result = await db.query(
 
- 
+
 
     `
 
- 
+
 
     select *
 
- 
+
 
     from machines
 
- 
+
 
     where
 
- 
+
 
       code = $1
 
- 
+
 
       or id::text = $1
 
- 
+
 
     limit 1
 
- 
+
 
     `,
 
- 
+
 
     [value],
 
- 
+
 
   );
 
- 
 
- 
 
- 
+
+
+
 
   return result.rows[0] || null;
 
- 
+
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 function getActorName(
 
- 
+
 
   req,
 
- 
+
 
   fallback = "Utilisateur LPB",
 
- 
+
 
 ) {
 
- 
+
 
   return (
 
- 
+
 
     String(
 
- 
+
 
       req.header("x-user-name") ||
 
- 
+
 
         req.body?.actorName ||
 
- 
+
 
         fallback,
 
- 
+
 
     ).trim() || fallback
 
- 
+
 
   );
 
- 
+
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 function deriveMovementAction({
 
- 
+
 
   current,
 
- 
+
 
   nextStatus,
 
- 
+
 
   clientChanged,
 
- 
+
 
   maintenanceChanged,
 
- 
+
 
 }) {
 
- 
+
 
   if (
 
- 
+
 
     current.statut !== nextStatus
 
- 
+
 
   ) {
 
- 
+
 
     if (
 
- 
+
 
       nextStatus ===
 
- 
+
 
       "En maintenance"
 
- 
+
 
     ) {
 
- 
+
 
       return "Entrée en maintenance";
 
- 
+
 
     }
 
- 
 
- 
 
- 
+
+
+
 
     if (
 
- 
+
 
       nextStatus === "En stock"
 
- 
+
 
     ) {
 
- 
+
 
       return "Retour en stock";
 
- 
+
 
     }
 
- 
 
- 
 
- 
+
+
+
 
     if (
 
- 
+
 
       [
 
- 
+
 
         "En prêt",
 
- 
+
 
         "En location",
 
- 
+
 
         "Vendue",
 
- 
+
 
       ].includes(nextStatus)
 
- 
+
 
     ) {
 
- 
+
 
       return "Affectation client";
 
- 
+
 
     }
 
- 
 
- 
 
- 
+
+
+
 
     return "Changement de statut";
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   if (clientChanged) {
 
- 
+
 
     return "Changement de client";
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   if (maintenanceChanged) {
 
- 
+
 
     return "Mise à jour maintenance";
 
- 
+
 
   }
 
- 
 
- 
 
- 
+
+
+
 
   return "Mise à jour machine";
 
- 
+
 
 }
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/health",
 
- 
+
 
   async (_req, res) => {
 
- 
+
 
     try {
 
- 
+
 
       await pool.query("select 1");
 
- 
 
- 
 
- 
+
+
+
 
       return res.json({
 
- 
+
 
         ok: true,
 
- 
+
 
         database: true,
 
- 
+
 
         appBaseUrl: APP_BASE_URL,
 
- 
+
 
       });
 
- 
+
 
     } catch (error) {
 
- 
+
 
       return errorResponse(
 
- 
+
 
         res,
 
- 
+
 
         error,
 
- 
+
 
         "GET /api/health ERROR:",
 
- 
+
 
       );
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/machines",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   async (_req, res) => {
 
- 
+
 
     try {
 
- 
+
 
       const result =
 
- 
+
 
         await pool.query(`
 
- 
+
 
           select
 
- 
+
 
             ${machineSelectSql()}
 
- 
+
 
           from machines
 
- 
+
 
           order by created_at desc
 
- 
+
 
         `);
 
- 
 
- 
 
- 
+
+
+
 
       return res.json(
 
- 
+
 
         result.rows,
 
- 
+
 
       );
 
- 
+
 
     } catch (error) {
 
- 
+
 
       return errorResponse(
 
- 
+
 
         res,
 
- 
+
 
         error,
 
- 
+
 
         "GET /api/machines ERROR:",
 
- 
+
 
       );
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/clients",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   async (req, res) => {
 
- 
+
 
     try {
 
- 
+
 
       const search = String(
 
- 
+
 
         req.query.search || "",
 
- 
+
 
       ).trim();
 
- 
 
- 
 
- 
+
+
+
 
       const limit = Math.min(
 
- 
+
 
         Math.max(
 
- 
+
 
           Number(req.query.limit) ||
 
- 
+
 
             100,
 
- 
+
 
           1,
 
- 
+
 
         ),
 
- 
+
 
         500,
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
       const clients =
 
- 
+
 
         await crm.clients.list({
 
- 
+
 
           search,
 
- 
+
 
           limit,
 
- 
+
 
         });
 
- 
 
- 
 
- 
+
+
+
 
       res.setHeader(
 
- 
+
 
         "x-lpb-client-source",
 
- 
+
 
         "crm",
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
       return res.json(clients);
 
- 
+
 
     } catch (error) {
 
- 
+
 
       console.error(
 
- 
+
 
         "GET /api/clients CRM ERROR:",
 
- 
+
 
         error,
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
       return res
 
- 
+
 
         .status(
 
- 
+
 
           error?.statusCode ||
 
- 
+
 
             502,
 
- 
+
 
         )
 
- 
+
 
         .json({
 
- 
+
 
           error:
 
- 
+
 
             error?.code ||
 
- 
+
 
             "CRM_API_ERROR",
 
- 
 
- 
 
- 
+
+
+
 
           message:
 
- 
+
 
             error?.message ||
 
- 
+
 
             "Impossible de charger les clients depuis le CRM.",
 
- 
 
- 
 
- 
+
+
+
 
           detail:
 
- 
+
 
             error?.detail ||
 
- 
+
 
             null,
 
- 
+
 
         });
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/machines/:id/movements",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   async (req, res) => {
 
- 
+
 
     try {
 
- 
+
 
       const machine =
 
- 
+
 
         await findMachineByCodeOrUuid(
 
- 
+
 
           req.params.id,
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       if (!machine) {
 
- 
+
 
         return res.json([]);
 
- 
+
 
       }
 
- 
 
- 
 
- 
+
+
+
 
       const result =
 
- 
+
 
         await pool.query(
 
- 
+
 
           `
 
- 
+
 
           select
 
- 
+
 
             id,
 
- 
+
 
             machine_id
 
- 
+
 
               as "machineId",
 
- 
+
 
             date,
 
- 
+
 
             created_at
 
- 
+
 
               as "createdAt",
 
- 
+
 
             action,
 
- 
+
 
             event_type
 
- 
+
 
               as "eventType",
 
- 
+
 
             actor_name
 
- 
+
 
               as "actorName",
 
- 
+
 
             ancien_statut
 
- 
+
 
               as "ancienStatut",
 
- 
+
 
             nouveau_statut
 
- 
+
 
               as "nouveauStatut",
 
- 
+
 
             client_id
 
- 
+
 
               as "clientId",
 
- 
+
 
             commentaire,
 
- 
+
 
             old_values
 
- 
+
 
               as "oldValues",
 
- 
+
 
             new_values
 
- 
+
 
               as "newValues",
 
- 
+
 
             metadata
 
- 
+
 
           from machine_movements
 
- 
+
 
           where machine_id = $1
 
- 
+
 
           order by
 
- 
+
 
             coalesce(
 
- 
+
 
               created_at,
 
- 
+
 
               date::timestamptz
 
- 
+
 
             ) desc
 
- 
+
 
           `,
 
- 
+
 
           [machine.id],
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       return res.json(
 
- 
+
 
         result.rows,
 
- 
+
 
       );
 
- 
+
 
     } catch (error) {
 
- 
+
 
       return errorResponse(
 
- 
+
 
         res,
 
- 
+
 
         error,
 
- 
+
 
         "GET /api/machines/:id/movements ERROR:",
 
- 
+
 
       );
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/public/machines/:code",
 
- 
+
 
   async (req, res) => {
 
- 
+
 
     try {
 
- 
+
 
       const result =
 
- 
+
 
         await pool.query(
 
- 
+
 
           `
 
- 
+
 
           select
 
- 
+
 
             ${machineSelectSql()}
 
- 
+
 
           from machines
 
- 
+
 
           where code = $1
 
- 
+
 
           limit 1
 
- 
+
 
           `,
 
- 
+
 
           [req.params.code],
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       if (
 
- 
+
 
         result.rows.length === 0
 
- 
+
 
       ) {
 
- 
+
 
         return res
 
- 
+
 
           .status(404)
 
- 
+
 
           .json({
 
- 
+
 
             error:
 
- 
+
 
               "Machine not found",
 
- 
 
- 
 
- 
+
+
+
 
             message:
 
- 
+
 
               "Aucune machine trouvée pour ce QR code.",
 
- 
+
 
           });
 
- 
+
 
       }
 
- 
 
- 
 
- 
+
+
+
 
       return res.json(
 
- 
+
 
         result.rows[0],
 
- 
+
 
       );
 
- 
+
 
     } catch (error) {
 
- 
+
 
       return errorResponse(
 
- 
+
 
         res,
 
- 
+
 
         error,
 
- 
+
 
         "GET /api/public/machines/:code ERROR:",
 
- 
+
 
       );
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/public/machines/:code/movements",
 
- 
+
 
   async (req, res) => {
 
- 
+
 
     try {
 
- 
+
 
       const machine =
 
- 
+
 
         await findMachineByCodeOrUuid(
 
- 
+
 
           req.params.code,
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       if (!machine) {
 
- 
+
 
         return res.json([]);
 
- 
+
 
       }
 
- 
 
- 
 
- 
+
+
+
 
       const result =
 
- 
+
 
         await pool.query(
 
- 
+
 
           `
 
- 
+
 
           select
 
- 
+
 
             id,
 
- 
+
 
             machine_id
 
- 
+
 
               as "machineId",
 
- 
+
 
             date,
 
- 
+
 
             created_at
 
- 
+
 
               as "createdAt",
 
- 
+
 
             action,
 
- 
+
 
             event_type
 
- 
+
 
               as "eventType",
 
- 
+
 
             actor_name
 
- 
+
 
               as "actorName",
 
- 
+
 
             ancien_statut
 
- 
+
 
               as "ancienStatut",
 
- 
+
 
             nouveau_statut
 
- 
+
 
               as "nouveauStatut",
 
- 
+
 
             client_id
 
- 
+
 
               as "clientId",
 
- 
+
 
             commentaire,
 
- 
+
 
             old_values
 
- 
+
 
               as "oldValues",
 
- 
+
 
             new_values
 
- 
+
 
               as "newValues",
 
- 
+
 
             metadata
 
- 
+
 
           from machine_movements
 
- 
+
 
           where machine_id = $1
 
- 
+
 
           order by
 
- 
+
 
             coalesce(
 
- 
+
 
               created_at,
 
- 
+
 
               date::timestamptz
 
- 
+
 
             ) desc
 
- 
+
 
           `,
 
- 
+
 
           [machine.id],
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       return res.json(
 
- 
+
 
         result.rows,
 
- 
+
 
       );
 
- 
+
 
     } catch (error) {
 
- 
+
 
       return errorResponse(
 
- 
+
 
         res,
 
- 
+
 
         error,
 
- 
+
 
         "GET /api/public/machines/:code/movements ERROR:",
 
- 
+
 
       );
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 /*
 
- 
+
 
  * Routes de compatibilité frontend.
 
- 
+
 
  * Pennylane est désormais géré par le CRM.
 
- 
+
 
  */
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/pennylane/status",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   (_req, res) => {
 
- 
+
 
     return res.json({
 
- 
+
 
       connected: false,
 
- 
+
 
       delegatedTo: "CRM",
 
- 
+
 
       lastSyncAt: "",
 
- 
+
 
     });
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/pennylane/customers",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   async (_req, res) => {
 
- 
+
 
     try {
 
- 
+
 
       return res.json(
 
- 
+
 
         await crm.clients.list(),
 
- 
+
 
       );
 
- 
+
 
     } catch (error) {
 
- 
+
 
       return res
 
- 
+
 
         .status(502)
 
- 
+
 
         .json({
 
- 
+
 
           error:
 
- 
+
 
             "CRM_UNAVAILABLE",
 
- 
 
- 
 
- 
+
+
+
 
           message:
 
- 
+
 
             error.message,
 
- 
+
 
         });
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/pennylane/products",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   (_req, res) =>
 
- 
+
 
     res.json([]),
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.get(
 
- 
+
 
   "/api/pennylane/invoices",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   (_req, res) =>
 
- 
+
 
     res.json([]),
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.post(
 
- 
+
 
   "/api/pennylane/connect",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   (_req, res) => {
 
- 
+
 
     return res
 
- 
+
 
       .status(410)
 
- 
+
 
       .json({
 
- 
+
 
         error:
 
- 
+
 
           "PENNYLANE_DELEGATED_TO_CRM",
 
- 
 
- 
 
- 
+
+
+
 
         message:
 
- 
+
 
           "Pennylane est désormais géré exclusivement par le CRM.",
 
- 
+
 
       });
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.post(
 
- 
+
 
   "/api/pennylane/disconnect",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   (_req, res) => {
 
- 
+
 
     return res
 
- 
+
 
       .status(410)
 
- 
+
 
       .json({
 
- 
+
 
         error:
 
- 
+
 
           "PENNYLANE_DELEGATED_TO_CRM",
 
- 
 
- 
 
- 
+
+
+
 
         message:
 
- 
+
 
           "Pennylane est désormais géré exclusivement par le CRM.",
 
- 
+
 
       });
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.post(
 
- 
+
 
   "/api/pennylane/sync/customers",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   (_req, res) => {
 
- 
+
 
     return res
 
- 
+
 
       .status(410)
 
- 
+
 
       .json({
 
- 
+
 
         error:
 
- 
+
 
           "PENNYLANE_DELEGATED_TO_CRM",
 
- 
 
- 
 
- 
+
+
+
 
         message:
 
- 
+
 
           "La synchronisation des clients est désormais réalisée par le CRM.",
 
- 
+
 
       });
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.post(
 
- 
+
 
   "/api/clients",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   (_req, res) => {
 
- 
+
 
     return res
 
- 
+
 
       .status(405)
 
- 
+
 
       .json({
 
- 
+
 
         error:
 
- 
+
 
           "CLIENTS_OWNED_BY_CRM",
 
- 
 
- 
 
- 
+
+
+
 
         message:
 
- 
+
 
           "Les clients doivent être créés et modifiés dans le CRM.",
 
- 
+
 
       });
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.post(
 
- 
+
 
   "/api/machines",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   async (req, res) => {
 
- 
+
 
     const client =
 
- 
+
 
       await pool.connect();
 
- 
 
- 
 
- 
+
+
+
 
     try {
 
- 
+
 
       await client.query(
 
- 
+
 
         "begin",
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
       const {
 
- 
+
 
         marque,
 
- 
+
 
         modele,
 
- 
+
 
         numeroSerie,
 
- 
+
 
         fournisseur,
 
- 
+
 
         dateAchat,
 
- 
+
 
         factureAchat,
 
- 
+
 
         prixAchat,
 
- 
+
 
         lieu,
 
- 
+
 
         commentaire,
 
- 
+
 
         pennylaneProductId,
 
- 
+
 
         pennylanePurchaseInvoiceId,
 
- 
+
 
         pennylaneSalesInvoiceId,
 
- 
+
 
       } = req.body || {};
 
- 
 
- 
 
- 
+
+
+
 
       if (
 
- 
+
 
         !marque ||
 
- 
+
 
         !modele ||
 
- 
+
 
         !numeroSerie
 
- 
+
 
       ) {
 
- 
+
 
         await client.query(
 
- 
+
 
           "rollback",
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
         return res
 
- 
+
 
           .status(400)
 
- 
+
 
           .json({
 
- 
+
 
             error:
 
- 
+
 
               "marque, modele and numeroSerie are required",
 
- 
 
- 
 
- 
+
+
+
 
             message:
 
- 
+
 
               "La marque, le modèle et le numéro de série sont obligatoires.",
 
- 
+
 
           });
 
- 
+
 
       }
 
- 
 
- 
 
- 
+
+
+
 
       const year =
 
- 
+
 
         new Date().getFullYear();
 
- 
 
- 
 
- 
+
+
+
 
       const lastCodeResult =
 
- 
+
 
         await client.query(
 
- 
+
 
           `
 
- 
+
 
           select code
 
- 
+
 
           from machines
 
- 
+
 
           where code like $1
 
- 
+
 
           order by code desc
 
- 
+
 
           limit 1
 
- 
+
 
           `,
 
- 
+
 
           [`MC-${year}-%`],
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       let nextNumber = 1;
 
- 
 
- 
 
- 
+
+
+
 
       if (
 
- 
+
 
         lastCodeResult.rows
 
- 
+
 
           .length > 0
 
- 
+
 
       ) {
 
- 
+
 
         const lastCode =
 
- 
+
 
           lastCodeResult.rows[0]
 
- 
+
 
             .code;
 
- 
 
- 
 
- 
+
+
+
 
         const lastNumber =
 
- 
+
 
           Number(
 
- 
+
 
             lastCode
 
- 
+
 
               .split("-")
 
- 
+
 
               .pop(),
 
- 
+
 
           );
 
- 
 
- 
 
- 
+
+
+
 
         if (
 
- 
+
 
           !Number.isNaN(
 
- 
+
 
             lastNumber,
 
- 
+
 
           )
 
- 
+
 
         ) {
 
- 
+
 
           nextNumber =
 
- 
+
 
             lastNumber + 1;
 
- 
+
 
         }
 
- 
+
 
       }
 
- 
 
- 
 
- 
+
+
+
 
       const code =
 
- 
+
 
         `MC-${year}-${String(
 
- 
+
 
           nextNumber,
 
- 
+
 
         ).padStart(3, "0")}`;
 
- 
 
- 
 
- 
+
+
+
 
       const qrCode =
 
- 
+
 
         `${APP_BASE_URL}/machine/${code}`;
 
- 
 
- 
 
- 
+
+
+
 
       const sqlDateAchat =
 
- 
+
 
         toSqlDate(dateAchat);
 
- 
 
- 
 
- 
+
+
+
 
       const result =
 
- 
+
 
         await client.query(
 
- 
+
 
           `
 
- 
+
 
           insert into machines (
 
- 
+
 
             code,
 
- 
+
 
             qr_code,
 
- 
+
 
             marque,
 
- 
+
 
             modele,
 
- 
+
 
             numero_serie,
 
- 
+
 
             fournisseur,
 
- 
+
 
             date_achat,
 
- 
+
 
             facture_achat,
 
- 
+
 
             prix_achat,
 
- 
+
 
             statut,
 
- 
+
 
             client_id,
 
- 
+
 
             lieu,
 
- 
+
 
             type_mise_disposition,
 
- 
+
 
             date_mise_disposition,
 
- 
+
 
             commentaire,
 
- 
+
 
             date_maj,
 
- 
+
 
             pennylane_product_id,
 
- 
+
 
             pennylane_customer_id,
 
- 
+
 
             pennylane_purchase_invoice_id,
 
- 
+
 
             pennylane_sales_invoice_id
 
- 
+
 
           )
 
- 
+
 
           values (
 
- 
+
 
             $1,$2,$3,$4,$5,$6,$7,$8,$9,
 
- 
+
 
             'En stock',
 
- 
+
 
             null,
 
- 
+
 
             $10,
 
- 
+
 
             null,
 
- 
+
 
             null,
 
- 
+
 
             $11,
 
- 
+
 
             current_date,
 
- 
+
 
             $12,
 
- 
+
 
             null,
 
- 
+
 
             $13,
 
- 
+
 
             $14
 
- 
+
 
           )
 
- 
+
 
           returning
 
- 
+
 
             ${machineSelectSql()}
 
- 
+
 
           `,
 
- 
+
 
           [
 
- 
+
 
             code,
 
- 
+
 
             qrCode,
 
- 
+
 
             marque.trim(),
 
- 
+
 
             modele.trim(),
 
- 
+
 
             numeroSerie.trim(),
 
- 
+
 
             fournisseur ||
 
- 
+
 
               null,
 
- 
+
 
             sqlDateAchat,
 
- 
+
 
             factureAchat ||
 
- 
+
 
               null,
 
- 
+
 
             prixAchat !==
 
- 
+
 
                 undefined &&
 
- 
+
 
               prixAchat !== ""
 
- 
+
 
               ? Number(
 
- 
+
 
                   prixAchat,
 
- 
+
 
                 )
 
- 
+
 
               : null,
 
- 
+
 
             lieu || null,
 
- 
+
 
             commentaire ||
 
- 
+
 
               null,
 
- 
+
 
             pennylaneProductId ||
 
- 
+
 
               null,
 
- 
+
 
             pennylanePurchaseInvoiceId ||
 
- 
+
 
               null,
 
- 
+
 
             pennylaneSalesInvoiceId ||
 
- 
+
 
               null,
 
- 
+
 
           ],
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       await client.query(
 
- 
+
 
         `
 
- 
+
 
         insert into machine_movements (
 
- 
+
 
           machine_id,
 
- 
+
 
           action,
 
- 
+
 
           event_type,
 
- 
+
 
           actor_name,
 
- 
+
 
           ancien_statut,
 
- 
+
 
           nouveau_statut,
 
- 
+
 
           client_id,
 
- 
+
 
           commentaire,
 
- 
+
 
           old_values,
 
- 
+
 
           new_values,
 
- 
+
 
           metadata
 
- 
+
 
         )
 
- 
+
 
         values (
 
- 
+
 
           $1,$2,$3,$4,$5,$6,
 
- 
+
 
           $7,$8,$9::jsonb,
 
- 
+
 
           $10::jsonb,$11::jsonb
 
- 
+
 
         )
 
- 
+
 
         `,
 
- 
+
 
         [
 
- 
+
 
           result.rows[0].uuid,
 
- 
+
 
           "Création",
 
- 
+
 
           "CREATION",
 
- 
+
 
           getActorName(req),
 
- 
+
 
           "-",
 
- 
+
 
           "En stock",
 
- 
+
 
           null,
 
- 
+
 
           "Entrée en stock après achat",
 
- 
+
 
           JSON.stringify({}),
 
- 
+
 
           JSON.stringify({
 
- 
+
 
             statut:
 
- 
+
 
               "En stock",
 
- 
+
 
             lieu:
 
- 
+
 
               lieu || null,
 
- 
+
 
             marque:
 
- 
+
 
               marque.trim(),
 
- 
+
 
             modele:
 
- 
+
 
               modele.trim(),
 
- 
+
 
             numeroSerie:
 
- 
+
 
               numeroSerie.trim(),
 
- 
+
 
           }),
 
- 
+
 
           JSON.stringify({
 
- 
+
 
             source:
 
- 
+
 
               "ADMIN",
 
- 
+
 
           }),
 
- 
+
 
         ],
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
       await client.query(
 
- 
+
 
         "commit",
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
       return res.json(
 
- 
+
 
         result.rows[0],
 
- 
+
 
       );
 
- 
+
 
     } catch (error) {
 
- 
+
 
       await client.query(
 
- 
+
 
         "rollback",
 
- 
+
 
       );
 
- 
 
- 
 
- 
+
+
+
 
       return errorResponse(
 
- 
+
 
         res,
 
- 
+
 
         error,
 
- 
+
 
         "POST /api/machines ERROR:",
 
- 
+
 
       );
 
- 
+
 
     } finally {
 
- 
+
 
       client.release();
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 async function resolveCoreClient(value, db = pool) {
 
   if (value === undefined || value === null || value === "") return null;
 
- 
+
 
   const result = await db.query(
 
@@ -4050,13 +4121,13 @@ async function resolveCoreClient(value, db = pool) {
 
   );
 
- 
+
 
   return result.rows[0] || null;
 
 }
 
- 
+
 
 app.patch(
 
@@ -4068,13 +4139,13 @@ app.patch(
 
     const client = await pool.connect();
 
- 
+
 
     try {
 
       await client.query("begin");
 
- 
+
 
       const current = await findMachineByCodeOrUuid(req.params.id, client);
 
@@ -4092,7 +4163,7 @@ app.patch(
 
       }
 
- 
+
 
       const body = req.body || {};
 
@@ -4102,19 +4173,19 @@ app.patch(
 
       const nextCommentaire = body.commentaire ?? current.commentaire;
 
- 
+
 
       const clientRequiredStatuses = ["En prêt", "En location", "Vendue"];
 
       const statusKeepsClient = clientRequiredStatuses.includes(nextStatut);
 
- 
+
 
       const requestedClientReference =
 
         body.crmClientId ?? body.clientId ?? body.pennylaneCustomerId ?? null;
 
- 
+
 
       let nextClient = null;
 
@@ -4124,11 +4195,11 @@ app.patch(
 
       }
 
- 
+
 
       const nextClientId = statusKeepsClient ? nextClient?.id || null : null;
 
- 
+
 
       if (statusKeepsClient && !nextClientId) {
 
@@ -4144,7 +4215,7 @@ app.patch(
 
       }
 
- 
+
 
       const nextMaintenanceStartDate =
 
@@ -4164,7 +4235,7 @@ app.patch(
 
         current.maintenance_expected_return_date;
 
- 
+
 
       const updatedResult = await client.query(
 
@@ -4238,7 +4309,7 @@ app.patch(
 
       );
 
- 
+
 
       const oldClient = current.client_id
 
@@ -4250,7 +4321,7 @@ app.patch(
 
       const newClientName = nextClient?.name || "Sans client";
 
- 
+
 
       const oldValues = {};
 
@@ -4258,7 +4329,7 @@ app.patch(
 
       const changes = [];
 
- 
+
 
       function trackChange(key, label, oldValue, newValue) {
 
@@ -4276,7 +4347,7 @@ app.patch(
 
       }
 
- 
+
 
       trackChange("statut", "Statut", current.statut, nextStatut);
 
@@ -4294,7 +4365,7 @@ app.patch(
 
       trackChange("maintenanceExpectedReturnDate", "Retour maintenance prévu", current.maintenance_expected_return_date, nextMaintenanceExpectedReturnDate);
 
- 
+
 
       const clientChanged = oldClientName !== newClientName;
 
@@ -4310,7 +4381,7 @@ app.patch(
 
       ].some((key) => key in newValues);
 
- 
+
 
       const movementAction =
 
@@ -4328,7 +4399,7 @@ app.patch(
 
         });
 
- 
+
 
       const eventType = movementAction
 
@@ -4342,7 +4413,7 @@ app.patch(
 
         .replace(/^_|_$/g, "");
 
- 
+
 
       const historyComment =
 
@@ -4352,7 +4423,7 @@ app.patch(
 
           : body.commentaireAction || "Aucune modification détectée";
 
- 
+
 
       await client.query(
 
@@ -4406,7 +4477,7 @@ app.patch(
 
       );
 
- 
+
 
       await client.query("commit");
 
@@ -4428,7 +4499,7 @@ app.patch(
 
 );
 
- 
+
 app.delete(
   "/api/machines/:id",
   requireAdmin,
@@ -4650,7 +4721,7 @@ function legacyTicketStatusFromDb(status) {
 
 }
 
- 
+
 
 function dbTicketStatusFromLegacy(status) {
 
@@ -4682,7 +4753,7 @@ function dbTicketStatusFromLegacy(status) {
 
 }
 
- 
+
 
 function legacyPriorityFromDb(priority) {
 
@@ -4692,7 +4763,7 @@ function legacyPriorityFromDb(priority) {
 
 }
 
- 
+
 
 function dbPriorityFromLegacy(priority) {
 
@@ -4704,7 +4775,7 @@ function dbPriorityFromLegacy(priority) {
 
 }
 
- 
+
 
 function dbInterventionStatusFromLegacy(status) {
 
@@ -4730,7 +4801,7 @@ function dbInterventionStatusFromLegacy(status) {
 
 }
 
- 
+
 
 function legacyInterventionStatusFromDb(status) {
 
@@ -4760,7 +4831,7 @@ function legacyInterventionStatusFromDb(status) {
 
 }
 
- 
+
 
 function dbLocationTypeFromLegacy(value) {
 
@@ -4772,7 +4843,7 @@ function dbLocationTypeFromLegacy(value) {
 
 }
 
- 
+
 
 function legacyLocationTypeFromDb(value) {
 
@@ -4782,7 +4853,7 @@ function legacyLocationTypeFromDb(value) {
 
 }
 
- 
+
 
 function normalizeIsoDateTime(value, fieldName) {
 
@@ -4806,7 +4877,7 @@ function normalizeIsoDateTime(value, fieldName) {
 
 }
 
- 
+
 
 async function resolveSavTechnician(value, db = pool) {
 
@@ -4856,7 +4927,7 @@ async function resolveSavTechnician(value, db = pool) {
 
 }
 
- 
+
 
 async function nextNumber(prefix, tableName, columnName, db = pool) {
 
@@ -4886,7 +4957,7 @@ async function nextNumber(prefix, tableName, columnName, db = pool) {
 
 }
 
- 
+
 
 async function findSavTicket(value, db = pool) {
 
@@ -4902,7 +4973,7 @@ async function findSavTicket(value, db = pool) {
 
 }
 
- 
+
 
 async function resolveSavMachine(machineValue, db = pool) {
 
@@ -4926,7 +4997,7 @@ async function resolveSavMachine(machineValue, db = pool) {
 
 }
 
- 
+
 
 async function insertSavEvent(db, {
 
@@ -4976,7 +5047,7 @@ async function insertSavEvent(db, {
 
   };
 
- 
+
 
   const result = await db.query(
 
@@ -5010,13 +5081,13 @@ async function insertSavEvent(db, {
 
   );
 
- 
+
 
   return { id: result.rows[0].id, ...payload, metadata, createdAt: result.rows[0].occurred_at };
 
 }
 
- 
+
 
 function savTicketListSql(whereSql = "") {
 
@@ -5158,7 +5229,7 @@ function savTicketListSql(whereSql = "") {
 
 }
 
- 
+
 
 async function getSavTicketApiRow(ticketId, db = pool) {
 
@@ -5168,7 +5239,7 @@ async function getSavTicketApiRow(ticketId, db = pool) {
 
 }
 
- 
+
 
 async function getSavHistory(ticketId, db = pool) {
 
@@ -5222,7 +5293,7 @@ async function getSavHistory(ticketId, db = pool) {
 
 }
 
- 
+
 
 app.get("/api/sav/technicians", requireAdmin, async (_req, res) => {
 
@@ -5274,7 +5345,7 @@ app.get("/api/sav/technicians", requireAdmin, async (_req, res) => {
 
 });
 
- 
+
 
 app.get("/api/sav/tickets", requireAdmin, async (_req, res) => {
 
@@ -5292,7 +5363,7 @@ app.get("/api/sav/tickets", requireAdmin, async (_req, res) => {
 
 });
 
- 
+
 
 app.get("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
@@ -5316,7 +5387,7 @@ app.get("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
 });
 
- 
+
 
 app.get("/api/sav/tickets/:id/events", requireAdmin, async (req, res) => {
 
@@ -5336,7 +5407,7 @@ app.get("/api/sav/tickets/:id/events", requireAdmin, async (req, res) => {
 
 });
 
- 
+
 
 app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
@@ -5358,7 +5429,7 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     const machine = await resolveSavMachine(body.machineId || body.machineCode || null, client);
 
@@ -5370,7 +5441,7 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     const coreClient = await resolveCoreClient(body.crmClientId || body.clientId || body.pennylaneCustomerId || null, client);
 
@@ -5382,7 +5453,7 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     const technician = await resolveSavTechnician(body.technician || body.technicianId || null, client);
 
@@ -5394,7 +5465,7 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
     const description = String(body.description || title).trim() || title;
 
- 
+
 
     const result = await client.query(
 
@@ -5443,14 +5514,14 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
         description,
 
  technician?.user_profile_id || null,
-        
+
  null,
 
       ],
 
     );
 
- 
+
 
     const ticketId = result.rows[0].id;
 
@@ -5472,7 +5543,7 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
     });
 
- 
+
 
     await client.query("commit");
 
@@ -5494,7 +5565,7 @@ app.post("/api/sav/tickets", requireAdmin, async (req, res) => {
 
 });
 
- 
+
 
 app.patch("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
@@ -5514,7 +5585,7 @@ app.patch("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     const body = req.body || {};
 
@@ -5528,7 +5599,7 @@ app.patch("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     const nextDescription = body.description !== undefined ? String(body.description || nextTitle) : current.description;
 
@@ -5542,7 +5613,7 @@ app.patch("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
       : null;
 
- 
+
 
     let nextMachineId = current.machine_id;
 
@@ -5556,7 +5627,7 @@ app.patch("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     let nextClientId = current.client_id;
 
@@ -5570,13 +5641,13 @@ app.patch("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
 const assignedTechnicianId =
   body.technician !== undefined || body.technicianId !== undefined
     ? nextTech?.user_profile_id || null
     : current.assigned_technician_id;
- 
+
 
     await client.query(
 
@@ -5618,7 +5689,7 @@ const assignedTechnicianId =
 
     );
 
- 
+
 
     const oldLegacyStatus = legacyTicketStatusFromDb(current.status);
 
@@ -5636,7 +5707,7 @@ const assignedTechnicianId =
 
     const comment = String(body.comment || body.commentaire || "").trim() || null;
 
- 
+
 
     if (statusChanged) {
 
@@ -5664,7 +5735,7 @@ const assignedTechnicianId =
 
     }
 
- 
+
 
     if (quoteChanged) {
 
@@ -5690,7 +5761,7 @@ const assignedTechnicianId =
 
     }
 
- 
+
 
     if (!statusChanged && !quoteChanged && comment) {
 
@@ -5712,7 +5783,7 @@ const assignedTechnicianId =
 
     }
 
- 
+
 
     await client.query("commit");
 
@@ -5736,7 +5807,7 @@ const assignedTechnicianId =
 
 });
 
- 
+
 
 app.delete("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
@@ -5780,7 +5851,7 @@ app.delete("/api/sav/tickets/:id", requireAdmin, async (req, res) => {
 
 });
 
- 
+
 
 function savInterventionSelectSql() {
 
@@ -5878,7 +5949,7 @@ left join public.sav_technician_profiles stp
 
 }
 
- 
+
 
 async function findSavIntervention(value, db = pool) {
 
@@ -5888,7 +5959,7 @@ async function findSavIntervention(value, db = pool) {
 
 }
 
- 
+
 
 async function ensureNoScheduleConflict(db, { technicianId, startsAt, endsAt, excludeScheduleEntryId = null }) {
 
@@ -5938,13 +6009,13 @@ async function ensureNoScheduleConflict(db, { technicianId, startsAt, endsAt, ex
 
 }
 
- 
+
 
 async function upsertScheduleEntry(db, { intervention, ticket, technicianId, title, startsAt, endsAt }) {
 
   if (!technicianId || !startsAt || !endsAt) return null;
 
- 
+
 
   await ensureNoScheduleConflict(db, {
 
@@ -5958,7 +6029,7 @@ async function upsertScheduleEntry(db, { intervention, ticket, technicianId, tit
 
   });
 
- 
+
 
   if (intervention?.schedule_entry_id) {
 
@@ -5984,7 +6055,7 @@ async function upsertScheduleEntry(db, { intervention, ticket, technicianId, tit
 
   }
 
- 
+
 
   const result = await db.query(
 
@@ -6012,7 +6083,7 @@ async function upsertScheduleEntry(db, { intervention, ticket, technicianId, tit
 
 }
 
- 
+
 
 app.get("/api/sav/interventions", requireAdmin, async (req, res) => {
 
@@ -6022,7 +6093,7 @@ app.get("/api/sav/interventions", requireAdmin, async (req, res) => {
 
     const where = ["i.deleted_at is null", "t.deleted_at is null"];
 
- 
+
 
     if (req.query.from) {
 
@@ -6064,7 +6135,7 @@ app.get("/api/sav/interventions", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     const result = await pool.query(
 
@@ -6086,7 +6157,7 @@ app.get("/api/sav/interventions", requireAdmin, async (req, res) => {
 
 });
 
- 
+
 
 app.get("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
@@ -6106,7 +6177,7 @@ app.get("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
 });
 
- 
+
 
 app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
@@ -6128,7 +6199,7 @@ app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     const technician = await resolveSavTechnician(body.technicianId || body.technician || ticket.assigned_technician_id || null, client);
 
@@ -6144,7 +6215,7 @@ app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
     }
 
- 
+
 
     const interventionNumber = await nextNumber("INT", "sav_interventions", "intervention_number", client);
 
@@ -6154,7 +6225,7 @@ app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
     const title = String(body.title || `Intervention ${ticket.ticket_number}`).trim();
 
- 
+
 
     const result = await client.query(
 
@@ -6204,7 +6275,7 @@ app.post("/api/sav/interventions", requireAdmin, async (req, res) => {
 
     );
 
- 
+
 
 const intervention = result.rows[0];
 
@@ -6230,7 +6301,7 @@ if (technician?.id && startsAt && endsAt) {
 
 }
 
- 
+
 
 if (
   technician?.user_profile_id &&
@@ -6244,7 +6315,7 @@ if (
   );
 }
 
- 
+
 
     await insertSavEvent(client, {
 
@@ -6268,7 +6339,7 @@ if (
 
     });
 
- 
+
 
 await client.query("commit");
 
@@ -6357,7 +6428,7 @@ return res.status(201).json(apiResult.rows[0]);
 
 });
 
- 
+
 
 app.patch("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
@@ -6810,7 +6881,7 @@ app.patch("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
   }
 
 });
- 
+
 
 app.delete("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
 
@@ -7026,7 +7097,7 @@ app.delete("/api/sav/interventions/:id", requireAdmin, async (req, res) => {
   }
 
 });
- 
+
 
 app.get("/api/sav/planning", requireAdmin, async (req, res) => {
 
@@ -7122,246 +7193,246 @@ app.get("/api/sav/planning", requireAdmin, async (req, res) => {
 
 });
 
- 
+
 
 app.get(
 
- 
+
 
   "/api/preventive/queue",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   async (req, res) => {
 
- 
+
 
     try {
 
- 
+
 
       const limit =
 
- 
+
 
         normalizePreventiveLimit(
 
- 
+
 
           req.query.limit,
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       const result =
 
- 
+
 
         await pool.query(
 
- 
+
 
           `
 
- 
+
 
           select *
 
- 
+
 
           from public.sav_preventive_generation_queue
 
- 
+
 
           order by
 
- 
+
 
             due_date asc
 
- 
+
 
             nulls last
 
- 
+
 
           limit $1
 
- 
+
 
           `,
 
- 
+
 
           [limit],
 
- 
+
 
         );
 
- 
 
- 
 
- 
+
+
+
 
       return res.json(
 
- 
+
 
         result.rows,
 
- 
+
 
       );
 
- 
+
 
     } catch (error) {
 
- 
+
 
       if (
 
- 
+
 
         error.statusCode ===
 
- 
+
 
         400
 
- 
+
 
       ) {
 
- 
+
 
         return res
 
- 
+
 
           .status(400)
 
- 
+
 
           .json({
 
- 
+
 
             error:
 
- 
+
 
               error.message,
 
- 
+
 
           });
 
- 
+
 
       }
 
- 
 
- 
 
- 
+
+
+
 
       return errorResponse(
 
- 
+
 
         res,
 
- 
+
 
         error,
 
- 
+
 
         "GET /api/preventive/queue ERROR:",
 
- 
+
 
       );
 
- 
+
 
     }
 
- 
+
 
   },
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.post(
 
- 
+
 
   "/api/preventive/generate",
 
- 
+
 
   requireAdmin,
 
- 
+
 
   generatePreventiveTickets,
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 app.post(
 
- 
+
 
   "/api/cron/preventive/generate",
 
- 
+
 
   requireCron,
 
- 
+
 
   generatePreventiveTickets,
 
- 
+
 
 );
 
- 
 
- 
 
- 
+
+
+
 
 export default app;

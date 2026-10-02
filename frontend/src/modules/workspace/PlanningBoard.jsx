@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-
+import { supabase } from "@/supabase";
  
 
 import {
@@ -57,9 +57,6 @@ import { Input } from "@/components/ui/input";
  
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
-
-const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || "change-me";
-
  
 
 const DAY_NAMES = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
@@ -363,70 +360,73 @@ function priorityClasses(priority) {
 
  
 
-async function planningApiRequest(path, { method = "GET", body } = {}) {
+async function planningApiRequest(
+  path,
+  {
+    method = "GET",
+    body,
+  } = {},
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-
-    method,
-
-    headers: {
-
-      Accept: "application/json",
-
-      "x-api-key": ADMIN_API_KEY,
-
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-
-    },
-
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-
-  });
-
- 
-
-  const raw = await response.text();
-
-  let payload = null;
-
- 
-
-  if (raw) {
-
-    try {
-
-      payload = JSON.parse(raw);
-
-    } catch {
-
-      payload = raw;
-
-    }
-
+  if (!session?.access_token) {
+    throw new Error(
+      "Session expirée. Merci de vous reconnecter.",
+    );
   }
 
- 
+  const response = await fetch(
+    `${API_BASE_URL}${path}`,
+    {
+      method,
+
+      headers: {
+        Accept: "application/json",
+
+        Authorization:
+          `Bearer ${session.access_token}`,
+
+        ...(body !== undefined
+          ? {
+              "Content-Type":
+                "application/json",
+            }
+          : {}),
+      },
+
+      ...(body !== undefined
+        ? {
+            body: JSON.stringify(body),
+          }
+        : {}),
+    },
+  );
+
+  const raw =
+    await response.text();
+
+  let data = null;
+
+  try {
+    data = raw
+      ? JSON.parse(raw)
+      : null;
+  } catch {
+    data = raw;
+  }
 
   if (!response.ok) {
-
-    const error = new Error(
-
-      payload?.message || payload?.error || `Erreur API ${response.status}`,
-
+    throw new Error(
+      data?.message ||
+        data?.error ||
+        `Erreur API ${response.status}`,
     );
-
-    error.statusCode = response.status;
-
-    throw error;
-
   }
 
- 
-
-  return payload;
-
+  return data;
 }
-
  
 
 async function loadTechnicians() {

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import QRCodeLib from "qrcode";
 import { QRCodeSVG } from "qrcode.react";
+import { supabase } from "./supabase";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,10 +22,6 @@ import WorkspaceSection from "@/modules/workspace/WorkspaceSection";
 import MachineWorkspace from "@/modules/workspace/MachineWorkspace";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
-const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || "change-me";
-const LOGIN_USERNAME = import.meta.env.VITE_LOGIN_USERNAME || "admin";
-const LOGIN_PASSWORD = import.meta.env.VITE_LOGIN_PASSWORD || "";
-const LOGIN_STORAGE_KEY = "lpb-machines-auth";
 const LABEL_STORAGE_KEY = "lpb-machines-label-settings";
 
 const STATUSES = [
@@ -39,15 +36,33 @@ const STATUSES = [
 
 async function apiFetch(path, options = {}) {
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ADMIN_API_KEY,
-        "x-user-name": LOGIN_USERNAME,
-        ...(options.headers || {}),
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      throw sessionError;
+    }
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Session expirée. Merci de vous reconnecter.",
+      );
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}${path}`,
+      {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            `Bearer ${session.access_token}`,
+          ...(options.headers || {}),
+        },
       },
-    });
+    );
 
     let body = null;
 
@@ -58,14 +73,33 @@ async function apiFetch(path, options = {}) {
     }
 
     if (!response.ok) {
-      console.error("API ERROR", { path, status: response.status, body });
-      throw new Error(body?.message || body?.error || `Erreur API ${response.status}`);
+      console.error("API ERROR", {
+        path,
+        status: response.status,
+        body,
+      });
+
+      if (response.status === 401) {
+        throw new Error(
+          "Votre session n'est plus valide. Merci de vous reconnecter.",
+        );
+      }
+
+      throw new Error(
+        body?.message ||
+          body?.error ||
+          `Erreur API ${response.status}`,
+      );
     }
 
     return body;
   } catch (error) {
     console.error("FETCH ERROR", error);
-    throw new Error(error?.message || "Erreur réseau ou backend inaccessible.");
+
+    throw new Error(
+      error?.message ||
+        "Erreur réseau ou backend inaccessible.",
+    );
   }
 }
 
@@ -234,29 +268,61 @@ function printQRCode(machine) {
 
 export default function App() {
   const routeInfo = getRouteInfo();
-const [isAuthenticated, setIsAuthenticated] = useState(
-  localStorage.getItem(LOGIN_STORAGE_KEY) === "true"
-);
+cconst [session, setSession] = useState(null);
+const [authLoading, setAuthLoading] = useState(true);
 const [loginUsername, setLoginUsername] = useState("");
 const [loginPassword, setLoginPassword] = useState("");
 const [loginError, setLoginError] = useState("");
 
-function handleLogin(event) {
+useEffect(() => {
+  let mounted = true;
+
+  supabase.auth.getSession().then(({ data }) => {
+    if (!mounted) return;
+
+    setSession(data.session ?? null);
+    setAuthLoading(false);
+  });
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    if (!mounted) return;
+
+    setSession(nextSession);
+    setAuthLoading(false);
+  });
+
+  return () => {
+    mounted = false;
+    subscription.unsubscribe();
+  };
+}, []);
+
+async function handleLogin(event) {
   event.preventDefault();
 
-  if (loginUsername === LOGIN_USERNAME && loginPassword === LOGIN_PASSWORD) {
-    localStorage.setItem(LOGIN_STORAGE_KEY, "true");
-    setIsAuthenticated(true);
-    setLoginError("");
-    return;
-  }
+  setLoginError("");
 
-  setLoginError("Identifiant ou mot de passe incorrect.");
+  const { error } = await supabase.auth.signInWithPassword({
+    email: loginUsername.trim(),
+    password: loginPassword,
+  });
+
+if (error) {
+  console.error("LOGIN ERROR", error);
+
+  setLoginError(
+    `Connexion impossible : ${error.message}`,
+  );
+
+  return;
+}
 }
 
-function handleLogout() {
-  localStorage.removeItem(LOGIN_STORAGE_KEY);
-  setIsAuthenticated(false);
+async function handleLogout() {
+  await supabase.auth.signOut();
+  setSession(null);
 }
   const [clients, setClients] = useState([]);
   const [machines, setMachines] = useState([]);
@@ -501,10 +567,18 @@ function handleLogout() {
   }
 }
 
-  useEffect(() => {
+useEffect(() => {
+  if (routeInfo.isMachineRoute) {
     loadAllData();
-  }, []);
+    return;
+  }
 
+  if (authLoading || !session) {
+    return;
+  }
+
+  loadAllData();
+}, [authLoading, session]);
   useEffect(() => {
     localStorage.setItem(LABEL_STORAGE_KEY, JSON.stringify(labelSettings));
   }, [labelSettings]);
@@ -771,7 +845,19 @@ Cette opération est possible uniquement si la machine ne possède aucun histori
     setSelectedMachineId(getMachineApiId(machineData));
   }
 
-if (!isAuthenticated) {
+if (!routeInfo.isMachineRoute && authLoading) {
+  return (
+    <div className="min-h-screen bg-[#f4eadc] p-6">
+      <Card className="mx-auto max-w-md rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
+        <CardContent className="p-8 text-sm text-[#7a5f4b]">
+          Vérification de la connexion...
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+if (!routeInfo.isMachineRoute && !session) {
   return (
     <LoginPage
       username={loginUsername}

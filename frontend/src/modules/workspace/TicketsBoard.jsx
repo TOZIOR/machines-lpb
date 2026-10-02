@@ -19,7 +19,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-
+import { supabase } from "@/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,8 +35,6 @@ const API_BASE_URL = String(
   import.meta.env.VITE_API_BASE_URL || "/api",
 ).replace(/\/+$/, "");
 
-const ADMIN_API_KEY =
-  import.meta.env.VITE_ADMIN_API_KEY || "";
 
 const COLUMNS = [
   {
@@ -320,18 +318,24 @@ async function savApiRequest(
     body,
   } = {},
 ) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error(
+      "Session expirée. Merci de vous reconnecter.",
+    );
+  }
+
   const response = await fetch(
     `${API_BASE_URL}${path}`,
     {
       method,
       headers: {
         Accept: "application/json",
-        ...(ADMIN_API_KEY
-          ? {
-              "x-api-key":
-                ADMIN_API_KEY,
-            }
-          : {}),
+        Authorization:
+          `Bearer ${session.access_token}`,
         ...(body !== undefined
           ? {
               "Content-Type":
@@ -548,19 +552,26 @@ async function searchCrmClients(search) {
   params.set("search", search);
   params.set("limit", "20");
 
+
+const {
+  data: { session },
+} = await supabase.auth.getSession();
+
+if (!session?.access_token) {
+  throw new Error(
+    "Session expirée. Merci de vous reconnecter.",
+  );
+}
+
   const response = await fetch(
     `${API_BASE_URL}/clients?${params.toString()}`,
     {
       method: "GET",
       headers: {
-        Accept: "application/json",
-        ...(ADMIN_API_KEY
-          ? {
-              "x-api-key":
-                ADMIN_API_KEY,
-            }
-          : {}),
-      },
+  Accept: "application/json",
+  Authorization:
+    `Bearer ${session.access_token}`,
+},
     },
   );
 
