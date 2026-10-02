@@ -268,7 +268,7 @@ function printQRCode(machine) {
 
 export default function App() {
   const routeInfo = getRouteInfo();
-cconst [session, setSession] = useState(null);
+const [session, setSession] = useState(null);
 const [authLoading, setAuthLoading] = useState(true);
 const [loginUsername, setLoginUsername] = useState("");
 const [loginPassword, setLoginPassword] = useState("");
