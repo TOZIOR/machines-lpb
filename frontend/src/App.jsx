@@ -392,7 +392,6 @@ async function handleLogout() {
   const [maintenanceReason, setMaintenanceReason] = useState("");
   const [maintenanceAction, setMaintenanceAction] = useState("");
   const [maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate] = useState("");
-  const [actionPennylaneCustomerId, setActionPennylaneCustomerId] = useState("");
 
 
  async function loadAllData() {
@@ -652,7 +651,6 @@ useEffect(() => {
     setMaintenanceReason(selectedMachine.maintenanceReason || "");
     setMaintenanceAction(selectedMachine.maintenanceAction || "");
     setMaintenanceExpectedReturnDate(selectedMachine.maintenanceExpectedReturnDate || "");
-    setActionPennylaneCustomerId(selectedMachine.pennylaneCustomerId || "");
   }, [selectedMachine]);
 
   const filteredMachines = useMemo(() => {
@@ -721,76 +719,81 @@ useEffect(() => {
     }
   }
 
-  async function applyAction() {
-    if (!selectedMachine) return;
+ async function applyAction() {
+  if (!selectedMachine) return;
 
-    try {
-      setErrorMessage("");
+  try {
+    setErrorMessage("");
 
-      const clientRequiredStatuses = [
-        "En prêt",
-        "En location",
-        "Vendue",
-      ];
+    const clientRequiredStatuses = [
+      "En prêt",
+      "En location",
+      "Vendue",
+    ];
 
-      const clientIsRequired =
-        clientRequiredStatuses.includes(actionStatus);
+    const clientIsRequired =
+      clientRequiredStatuses.includes(actionStatus);
 
-      if (clientIsRequired && !actionPennylaneCustomerId) {
-        setErrorMessage(
-          `Un client doit être sélectionné lorsque le statut est « ${actionStatus} ».`,
-        );
-        return;
-      }
+    if (clientIsRequired && !actionClientId) {
+      setErrorMessage(
+        `Un client doit être sélectionné lorsque le statut est « ${actionStatus} ».`,
+      );
+      return;
+    }
 
-      const matchingLocalClient = actionPennylaneCustomerId
-        ? clients.find(
-            (client) =>
-              String(client.pennylaneCustomerId || "") ===
-              String(actionPennylaneCustomerId),
-          )
-        : null;
+    const resolvedClientId =
+      actionClientId || null;
 
-      const resolvedClientId = matchingLocalClient?.id ?? null;
-      const apiId = getMachineApiId(selectedMachine);
+    const apiId =
+      getMachineApiId(selectedMachine);
 
-      const updatedMachine = await apiFetch(`/machines/${apiId}`, {
+    const updatedMachine =
+      await apiFetch(`/machines/${apiId}`, {
         method: "PATCH",
         body: JSON.stringify({
           statut: actionStatus,
           clientId: resolvedClientId,
-          pennylaneCustomerId: actionPennylaneCustomerId || null,
           lieu: actionLocation || "",
           commentaire:
-            actionComment || selectedMachine.commentaire || "",
-          maintenanceStartDate: maintenanceStartDate || null,
-          maintenanceReason: maintenanceReason || null,
-          maintenanceAction: maintenanceAction || null,
+            actionComment ||
+            selectedMachine.commentaire ||
+            "",
+          maintenanceStartDate:
+            maintenanceStartDate || null,
+          maintenanceReason:
+            maintenanceReason || null,
+          maintenanceAction:
+            maintenanceAction || null,
           maintenanceExpectedReturnDate:
             maintenanceExpectedReturnDate || null,
           action: "Mise à jour",
         }),
       });
 
-      setMachines((previousMachines) =>
-        previousMachines.map((machine) =>
-          getMachineApiId(machine) === apiId
-            ? updatedMachine
-            : machine,
-        ),
-      );
+    setMachines((previousMachines) =>
+      previousMachines.map((machine) =>
+        getMachineApiId(machine) === apiId
+          ? updatedMachine
+          : machine,
+      ),
+    );
 
-      setMovements(await apiFetch(`/machines/${apiId}/movements`));
-      setActionClientId(updatedMachine.clientId || "");
-      setActionPennylaneCustomerId(
-        updatedMachine.pennylaneCustomerId || "",
-      );
-      setActionComment("");
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error.message);
-    }
+    setMovements(
+      await apiFetch(
+        `/machines/${apiId}/movements`,
+      ),
+    );
+
+    setActionClientId(
+      updatedMachine.clientId || "",
+    );
+
+    setActionComment("");
+  } catch (error) {
+    console.error(error);
+    setErrorMessage(error.message);
   }
+}
 
   async function deleteSelectedMachine() {
     if (!selectedMachine) return;
@@ -1085,8 +1088,9 @@ if (!routeInfo.isMachineRoute && !session) {
                 setMaintenanceAction={setMaintenanceAction}
                 maintenanceExpectedReturnDate={maintenanceExpectedReturnDate}
                 setMaintenanceExpectedReturnDate={setMaintenanceExpectedReturnDate}
-                actionPennylaneCustomerId={actionPennylaneCustomerId}
-                setActionPennylaneCustomerId={setActionPennylaneCustomerId}
+actionClientId={actionClientId}
+setActionClientId={setActionClientId}
+clients={clients}
                 onApplyAction={applyAction}
                 onDeleteMachine={deleteSelectedMachine}
                 labelSettings={labelSettings}
@@ -1116,8 +1120,12 @@ function MachineDetailPanel({
   actionStatus, setActionStatus, actionLocation, setActionLocation,
   actionComment, setActionComment, maintenanceStartDate, setMaintenanceStartDate,
   maintenanceReason, setMaintenanceReason, maintenanceAction, setMaintenanceAction,
-  maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate, actionPennylaneCustomerId,
-  setActionPennylaneCustomerId, onApplyAction, onDeleteMachine, labelSettings, setLabelSettings,
+maintenanceExpectedReturnDate,
+setMaintenanceExpectedReturnDate,
+actionClientId,
+setActionClientId,
+clients,
+onApplyAction,onDeleteMachine, labelSettings, setLabelSettings,
   errorMessage, onOpenTickets,
 }) {
   if (!machine) {
@@ -1252,11 +1260,11 @@ function MachineDetailPanel({
                 </Button>
               </div>
             </Field>
-            <Field label="Client Pennylane">
+           <Field label="Client Pennylane">
   <PennylaneCustomerSearchSelect
-    value={actionPennylaneCustomerId}
-    onChange={setActionPennylaneCustomerId}
-    customers={pennylaneCustomers}
+value={actionClientId}
+onChange={setActionClientId}
+customers={clients}
   />
 </Field>
             <Field label="Commentaire action" className="md:col-span-2"><Textarea value={actionComment} onChange={(e) => setActionComment(e.target.value)} /></Field>
