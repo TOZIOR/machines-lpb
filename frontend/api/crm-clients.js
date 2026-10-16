@@ -130,33 +130,72 @@ function extractRows(payload) {
 export function createCrmClientsApi(crmClient) {
   return {
     async list({ search = "", limit = 100 } = {}) {
-      const params = new URLSearchParams();
+      const allClients = [];
+      const pageSize = 100;
+      let page = 1;
 
-      const normalizedSearch = String(search || "").trim();
+      while (true) {
+        const params = new URLSearchParams();
 
-      if (normalizedSearch) {
-        params.set("search", normalizedSearch);
+        const normalizedSearch = String(search || "").trim();
+
+        if (normalizedSearch) {
+          params.set("search", normalizedSearch);
+        }
+
+        params.set("page", String(page));
+
+        // Compatibilite avec les deux API CRM
+        params.set("limit", String(pageSize));
+        params.set("pageSize", String(pageSize));
+
+        const separator = crmClient.clientsPath.includes("?")
+          ? "&"
+          : "?";
+
+        const path =
+          `${crmClient.clientsPath}${separator}${params.toString()}`;
+
+        const payload = await crmClient.request(path);
+
+        const rows = extractRows(payload);
+        allClients.push(...rows);
+
+        const pagination =
+          payload?.meta?.pagination ?? payload?.pagination;
+
+        const totalPages = Number(pagination?.totalPages);
+
+        if (
+          Number.isInteger(totalPages) &&
+          totalPages >= 0
+        ) {
+          if (page >= totalPages) break;
+        } else if (rows.length < pageSize) {
+          break;
+        }
+
+        if (rows.length === 0 || page >= 1000) {
+          throw new Error("Pagination CRM incomplete");
+        }
+
+        page++;
       }
 
-      params.set(
-        "limit",
-        String(Math.min(Math.max(Number(limit) || 100, 1), 500))
+      const uniqueClients = Array.from(
+        new Map(
+          allClients
+            .map(normalizeCrmClient)
+            .filter(Boolean)
+            .map((client) => [client.id, client])
+        ).values()
       );
 
-      const separator = crmClient.clientsPath.includes("?") ? "&" : "?";
-
-      const path = `${crmClient.clientsPath}${separator}${params.toString()}`;
-
-      const payload = await crmClient.request(path);
-
-      return extractRows(payload)
-        .map(normalizeCrmClient)
-        .filter(Boolean)
-        .sort((a, b) =>
-          a.nom.localeCompare(b.nom, "fr", {
-            sensitivity: "base",
-          })
-        );
+      return uniqueClients.sort((a, b) =>
+        a.nom.localeCompare(b.nom, "fr", {
+          sensitivity: "base",
+        })
+      );
     },
   };
 }
