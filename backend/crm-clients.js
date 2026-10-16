@@ -110,7 +110,7 @@ async function fetchCrmClients({ url, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS }) 
     const rows = extractClientRows(payload);
     allClients.push(...rows);
 
-    const pagination = payload?.pagination;
+    const pagination = payload?.meta?.pagination ?? payload?.pagination;
     const reportedPages = Number(pagination?.totalPages);
 
     if (Number.isInteger(reportedPages) && reportedPages >= 0) {
