@@ -1186,7 +1186,7 @@ onApplyAction,onDeleteMachine, labelSettings, setLabelSettings,
         {activeTab === "fiche" ? (
           <div className="grid gap-4 md:grid-cols-2">
             <Info
-              label="Client Pennylane"
+              label="Client CRM"
               value={pennylaneCustomer?.name || pennylaneCustomer?.label || "Sans client"}
               icon={UserRound}
             />
@@ -1260,7 +1260,7 @@ onApplyAction,onDeleteMachine, labelSettings, setLabelSettings,
                 </Button>
               </div>
             </Field>
-           <Field label="Client Pennylane">
+           <Field label="Client CRM">
   <PennylaneCustomerSearchSelect
 value={actionClientId}
 onChange={setActionClientId}
@@ -2135,12 +2135,12 @@ function CheckboxField({ label, checked, onChange }) {
 
 function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
   const selectedCustomer = customers.find((customer) => String(customer.id) === String(value)) || null;
-  const [query, setQuery] = useState(selectedCustomer?.name || selectedCustomer?.label || "");
+  const [query, setQuery] = useState(selectedCustomer?.nom || selectedCustomer?.name || selectedCustomer?.label || "");
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     const customer = customers.find((item) => String(item.id) === String(value));
-    setQuery(customer?.name || customer?.label || "");
+    setQuery(customer?.nom || customer?.name || customer?.label || "");
   }, [value, customers]);
 
   const filteredCustomers = useMemo(() => {
@@ -2148,7 +2148,7 @@ function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
 
     return customers
       .filter((customer) => {
-        const label = [customer.name, customer.label, customer.email, customer.phone]
+        const label = [customer.nom, customer.name, customer.label, customer.email, customer.phone]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -2160,7 +2160,7 @@ function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
 
   function selectCustomer(customer) {
     onChange(String(customer.id));
-    setQuery(customer.name || customer.label || customer.id);
+    setQuery(customer.nom || customer.name || customer.label || customer.id);
     setIsOpen(false);
   }
 
@@ -2199,11 +2199,11 @@ function PennylaneCustomerSearchSelect({ value, onChange, customers }) {
               <button
                 key={customer.id}
                 type="button"
-                onMouseDown={() => selectCustomer(customer)}
+                onClick={() => selectCustomer(customer)}
                 className="block w-full border-b border-[#f0dfcd] px-4 py-3 text-left hover:bg-[#f7eddf]"
               >
                 <div className="text-sm font-bold text-[#2d1b12]">
-                  {customer.name || customer.label || customer.id}
+                  {customer.nom || customer.name || customer.label || customer.id}
                 </div>
                 {customer.email ? (
                   <div className="text-xs text-[#7a5f4b]">{customer.email}</div>
