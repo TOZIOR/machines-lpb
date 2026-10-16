@@ -63,38 +63,85 @@ async function fetchCrmClients({ url, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS }) 
     throw error;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const headers = { Accept: "application/json" };
 
-  try {
-    const headers = { Accept: "application/json" };
-    if (apiKey) {
-      headers.Authorization = `Bearer ${apiKey}`;
-      headers["x-api-key"] = apiKey;
-    }
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers,
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      const error = new Error(`CRM clients request failed (${response.status})`);
-      error.status = response.status;
-      error.detail = body.slice(0, 500);
-      throw error;
-    }
-
-    const payload = await response.json();
-    return extractClientRows(payload)
-      .map(normalizeCrmClient)
-      .filter(Boolean)
-      .sort((a, b) => a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" }));
-  } finally {
-    clearTimeout(timeout);
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+    headers["x-api-key"] = apiKey;
   }
+
+  const allClients = [];
+  const pageSize = 500;
+  let page = 1;
+  let totalPages = null;
+
+  while (true) {
+    const pageUrl = new URL(url);
+    pageUrl.searchParams.set("page", String(page));
+    pageUrl.searchParams.set("pageSize", String(pageSize));
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    let payload;
+
+    try {
+      const response = await fetch(pageUrl.toString(), {
+        method: "GET",
+        headers,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        const error = new Error(
+          `CRM clients request failed (${response.status})`
+        );
+        error.status = response.status;
+        error.detail = body.slice(0, 500);
+        throw error;
+      }
+
+      payload = await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const rows = extractClientRows(payload);
+    allClients.push(...rows);
+
+    const pagination = payload?.pagination;
+    const reportedPages = Number(pagination?.totalPages);
+
+    if (Number.isInteger(reportedPages) && reportedPages >= 0) {
+      totalPages = reportedPages;
+    }
+
+    if (totalPages !== null) {
+      if (page >= totalPages) break;
+    } else if (rows.length < pageSize) {
+      break;
+    }
+
+    if (rows.length === 0 || page >= 1000) {
+      throw new Error("CRM pagination incomplete or invalid");
+    }
+
+    page++;
+  }
+
+  const uniqueClients = Array.from(
+    new Map(
+      allClients
+        .map(normalizeCrmClient)
+        .filter(Boolean)
+        .map((client) => [client.id, client])
+    ).values()
+  );
+
+  return uniqueClients.sort((a, b) =>
+    a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" })
+  );
 }
 
 module.exports = {
