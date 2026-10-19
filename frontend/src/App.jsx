@@ -394,10 +394,12 @@ async function handleLogout() {
   const [maintenanceExpectedReturnDate, setMaintenanceExpectedReturnDate] = useState("");
 
 
- async function loadAllData() {
+async function loadAllData({ silent = false } = {}) {
   try {
-    setErrorMessage("");
-    setIsLoading(true);
+    if (!silent) {
+      setErrorMessage("");
+      setIsLoading(true);
+    }
 
     // =========================================================
     // PAGE PUBLIQUE MACHINE
@@ -567,17 +569,30 @@ async function handleLogout() {
 }
 
 useEffect(() => {
-  if (routeInfo.isMachineRoute) {
-    loadAllData();
+  if (!routeInfo.isMachineRoute && (authLoading || !session)) {
     return;
   }
 
-  if (authLoading || !session) {
-    return;
-  }
-
+  // Chargement initial
   loadAllData();
-}, [authLoading, session]);
+
+  // Actualisation silencieuse toutes les 5 minutes
+  const interval = setInterval(() => {
+    if (document.visibilityState === "visible") {
+      loadAllData({ silent: true });
+    }
+  }, 5 * 60 * 1000);
+
+  return () => {
+    clearInterval(interval);
+  };
+}, [
+  authLoading,
+  session?.user?.id,
+  routeInfo.isMachineRoute,
+  routeInfo.machineCode,
+]);
+
   useEffect(() => {
     localStorage.setItem(LABEL_STORAGE_KEY, JSON.stringify(labelSettings));
   }, [labelSettings]);
