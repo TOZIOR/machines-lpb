@@ -395,10 +395,6 @@ async function handleLogout() {
 
 
 async function loadAllData({ silent = false } = {}) {
-console.log("[LPB] loadAllData", {
-  silent,
-  time: new Date().toLocaleTimeString(),
-});
   try {
     if (!silent) {
       setErrorMessage("");
@@ -573,11 +569,6 @@ console.log("[LPB] loadAllData", {
 }
 
 useEffect(() => {
-console.log("[LPB] Effet chargement", {
-  authLoading,
-  userId: session?.user?.id,
-  time: new Date().toLocaleTimeString(),
-});
   if (!routeInfo.isMachineRoute && (authLoading || !session)) {
     return;
   }
