@@ -888,7 +888,7 @@ if (!routeInfo.isMachineRoute && !session) {
   );
 }
 
-  if (isLoading) {
+if (isLoading && machines.length === 0) {
     return (
       <div className="min-h-screen bg-[#f4eadc] p-6">
         <Card className="mx-auto max-w-7xl rounded-3xl border-[#d8c4ad] bg-[#fffaf3] shadow-sm">
