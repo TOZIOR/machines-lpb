@@ -937,6 +937,28 @@ if (isLoading && machines.length === 0) {
                   />
                 </div>
 
+<div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-white/10 px-4 py-2">
+  <UserRound className="h-5 w-5 text-[#eadcc9]" />
+
+  <div className="flex flex-col">
+    <span className="text-sm font-semibold text-white">
+      {session?.user?.user_metadata?.full_name ||
+        [
+          session?.user?.user_metadata?.first_name,
+          session?.user?.user_metadata?.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ") ||
+        session?.user?.email ||
+        "Utilisateur"}
+    </span>
+
+    <span className="text-xs text-[#eadcc9]">
+      Utilisateur connecté
+    </span>
+  </div>
+</div>
+
 <Button
   variant="outline"
   className="rounded-2xl border-white bg-white text-[#5b351f] hover:bg-[#f0dfcd]"
