@@ -269,6 +269,7 @@ function printQRCode(machine) {
 export default function App() {
   const routeInfo = getRouteInfo();
 const [session, setSession] = useState(null);
+const [connectedUserName, setConnectedUserName] = useState("");
 const [authLoading, setAuthLoading] = useState(true);
 const [loginUsername, setLoginUsername] = useState("");
 const [loginPassword, setLoginPassword] = useState("");
@@ -298,6 +299,46 @@ useEffect(() => {
     subscription.unsubscribe();
   };
 }, []);
+
+
+useEffect(() => {
+  let active = true;
+
+  async function loadConnectedUserName() {
+    const user = session?.user;
+
+    if (!user) {
+      setConnectedUserName("");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("first_name, last_name")
+      .eq("id", user.id)
+      .single();
+
+    if (!active) return;
+
+    if (error) {
+      console.error("Erreur chargement profil :", error.message);
+      setConnectedUserName(user.email || "Utilisateur");
+      return;
+    }
+
+    const fullName = [data?.first_name, data?.last_name]
+      .filter(Boolean)
+      .join(" ");
+
+    setConnectedUserName(fullName || user.email || "Utilisateur");
+  }
+
+  loadConnectedUserName();
+
+  return () => {
+    active = false;
+  };
+}, [session?.user?.id]);
 
 async function handleLogin(event) {
   event.preventDefault();
@@ -937,21 +978,13 @@ if (isLoading && machines.length === 0) {
                   />
                 </div>
 
-<div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-white/10 px-4 py-2">
+<div className="flex min-w-0 items-center gap-3 rounded-2xl border border-white/20 bg-white/10 px-4 py-2">
   <UserRound className="h-5 w-5 text-[#eadcc9]" />
 
   <div className="flex flex-col">
-    <span className="text-sm font-semibold text-white">
-      {session?.user?.user_metadata?.full_name ||
-        [
-          session?.user?.user_metadata?.first_name,
-          session?.user?.user_metadata?.last_name,
-        ]
-          .filter(Boolean)
-          .join(" ") ||
-        session?.user?.email ||
-        "Utilisateur"}
-    </span>
+<span className="text-sm font-semibold text-white">
+  {connectedUserName || session?.user?.email || "Utilisateur"}
+</span>
 
     <span className="text-xs text-[#eadcc9]">
       Utilisateur connecté
